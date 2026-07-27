@@ -16,12 +16,24 @@ import { z } from "zod";
  * first; every entry is a Flash-tier model of comparable capability, so a
  * fallback degrades throughput rather than answer quality.
  */
+/*
+  Order is measured, not assumed. Running scripts/adversarial-test.mjs pinned to
+  each model (via BLINDSPOT_MODEL) showed 3.5-flash-lite holds the decisive
+  judgement just as well as 3.6-flash — 3/3 verdicts, confident-wrong still
+  ranked below vague — at a fifth of the input price and about half the latency.
+  3.6-flash stays first only because it words the misconception label more
+  precisely, and that label is the most-read line in the UI.
+
+  3.5-flash is last despite being nominally stronger than lite: it is the one
+  model observed answering 503 "high demand", which the SDK retries internally
+  and which stalls a request for minutes.
+*/
 export const MODEL_CHAIN = [
   "gemini-3.6-flash",
-  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
   "gemini-flash-latest",
   "gemini-3-flash-preview",
-  "gemini-3.5-flash-lite",
+  "gemini-3.5-flash",
 ] as const;
 
 /**
@@ -37,10 +49,19 @@ class AttemptTimeout extends Error {
   }
 }
 
+/**
+ * `BLINDSPOT_MODEL` pins the chain to a single model. Only used for
+ * benchmarking — it lets scripts/adversarial-test.mjs measure whether a cheaper
+ * model still tells a confident wrong answer from a vague correct one, rather
+ * than that being decided by assumption.
+ */
+const override = process.env.BLINDSPOT_MODEL;
+const chain: readonly string[] = override ? [override] : MODEL_CHAIN;
+
 /** Kept as named entry points so callers read intent, not a model string. */
 export const MODELS = {
-  extraction: MODEL_CHAIN,
-  assessment: MODEL_CHAIN,
+  extraction: chain,
+  assessment: chain,
 } as const;
 
 let client: GoogleGenAI | null = null;
