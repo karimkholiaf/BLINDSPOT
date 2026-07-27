@@ -2,6 +2,8 @@
 
 **A study tool that finds what you're confident about and wrong about.**
 
+**[Try it →](https://blindspot-rust.vercel.app)** · [2-minute demo](docs/blindspot-demo.mp4)
+
 Upload a lecture PDF. Blindspot pulls out the concepts and writes a grading rubric for each one. You then explain each concept back in your own words — typed or spoken — and it grades your explanation against that rubric.
 
 The part that matters: it separates *incomplete* from *wrong*. A vague answer gets prompted for more. A fluent, confident, false answer gets named — the specific belief you hold, the phrase that gave you away, and what is actually true instead.

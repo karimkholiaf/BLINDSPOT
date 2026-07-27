@@ -106,5 +106,5 @@ next.js, react, typescript, tailwindcss, google-gemini, gemini-3.6-flash, zod, w
 
 ## Try it out links
 
-- [LIVE URL - to be added]
-- [GITHUB URL - to be added]
+- https://blindspot-rust.vercel.app
+- https://github.com/karimkholiaf/BLINDSPOT
