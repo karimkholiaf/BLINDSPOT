@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     parts.push({ text: extractionUserPrompt(hint) });
 
     const map = await generateStructured({
-      model: MODELS.extraction,
+      models: MODELS.extraction,
       system: EXTRACTION_SYSTEM,
       contents: [{ role: "user", parts }],
       schema: ConceptMapSchema,

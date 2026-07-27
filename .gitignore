@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# raw screen capture; the cut lives at docs/blindspot-demo.mp4
+docs/footage/

@@ -2,16 +2,45 @@ import { ApiError, GoogleGenAI, type ContentListUnion } from "@google/genai";
 import { z } from "zod";
 
 /**
- * Flash rather than Pro, and not for cost reasons: the Gemini free tier
- * returns 429 for every Pro model, so Flash is the strongest tier actually
- * reachable without a billing account. Assessment quality is the whole product,
- * so this choice is validated rather than assumed — `scripts/adversarial-test.mjs`
- * checks that the model still ranks a confident wrong answer below a vague
- * correct one, which is the judgement Flash could plausibly get wrong.
+ * Flash rather than Pro, and not for cost reasons: the Gemini free tier returns
+ * 429 for every Pro model, so Flash is the strongest tier actually reachable
+ * without a billing account. Assessment quality is the whole product, so the
+ * choice is validated rather than assumed — `scripts/adversarial-test.mjs`
+ * checks the model still ranks a confident wrong answer below a vague correct
+ * one, which is the judgement Flash could plausibly get wrong.
+ *
+ * The free tier allows only 20 requests per day *per model*, which a handful of
+ * visitors would exhaust. That quota is metered separately for each model, so
+ * falling through this chain on a 429 multiplies the daily budget by its length
+ * instead of leaving the app dead for the rest of the day. Ordered strongest
+ * first; every entry is a Flash-tier model of comparable capability, so a
+ * fallback degrades throughput rather than answer quality.
  */
+export const MODEL_CHAIN = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-flash-latest",
+  "gemini-3-flash-preview",
+  "gemini-3.5-flash-lite",
+] as const;
+
+/**
+ * A model that is merely busy stalls rather than failing: the SDK retries 503
+ * internally with backoff and can block for minutes. Capping each attempt turns
+ * that into a fast fall-through to the next model.
+ */
+const ATTEMPT_TIMEOUT_MS = 45_000;
+
+class AttemptTimeout extends Error {
+  constructor(model: string) {
+    super(`${model} did not respond within ${ATTEMPT_TIMEOUT_MS}ms`);
+  }
+}
+
+/** Kept as named entry points so callers read intent, not a model string. */
 export const MODELS = {
-  extraction: "gemini-3.6-flash",
-  assessment: "gemini-3.6-flash",
+  extraction: MODEL_CHAIN,
+  assessment: MODEL_CHAIN,
 } as const;
 
 let client: GoogleGenAI | null = null;
@@ -54,25 +83,61 @@ function toResponseSchema(schema: z.ZodType): Record<string, unknown> {
  * trust its parsed value completely.
  */
 export async function generateStructured<T extends z.ZodType>({
-  model,
+  models,
   system,
   contents,
   schema,
 }: {
-  model: string;
+  models: readonly string[];
   system: string;
   contents: ContentListUnion;
   schema: T;
 }): Promise<z.infer<T>> {
-  const response = await ai().models.generateContent({
-    model,
-    contents,
-    config: {
-      systemInstruction: system,
-      responseMimeType: "application/json",
-      responseJsonSchema: toResponseSchema(schema),
-    },
-  });
+  const config = {
+    systemInstruction: system,
+    responseMimeType: "application/json",
+    responseJsonSchema: toResponseSchema(schema),
+  };
+
+  let response;
+  let lastTransientError: unknown;
+
+  for (const model of models) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      response = await Promise.race([
+        ai().models.generateContent({ model, contents, config }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new AttemptTimeout(model)), ATTEMPT_TIMEOUT_MS);
+        }),
+      ]);
+      break;
+    } catch (error) {
+      // Spent quota (429), an overloaded model (5xx), and a stall are all
+      // reasons another model might succeed. A malformed request or a bad key
+      // fails identically everywhere, so those surface immediately.
+      const isTransient =
+        error instanceof AttemptTimeout ||
+        (error instanceof ApiError && (error.status === 429 || error.status >= 500));
+
+      if (!isTransient) throw error;
+
+      lastTransientError = error;
+      const reason =
+        error instanceof AttemptTimeout
+          ? "stalled"
+          : (error as ApiError).status === 429
+            ? "out of daily quota"
+            : "overloaded";
+      console.warn(`${model} ${reason}; falling through.`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  if (!response) {
+    throw lastTransientError ?? new UnreadableResponseError("No model was reachable.");
+  }
 
   const text = response.text;
   if (!text) {
@@ -108,7 +173,11 @@ export function errorResponse(error: unknown): Response {
   if (error instanceof ApiError) {
     if (error.status === 429) {
       return Response.json(
-        { error: "Hit the Gemini rate limit. Wait a few seconds and try again." },
+        {
+          error:
+            "Every model has spent its free-tier daily quota (20 requests each). " +
+            "It resets on Google's clock — try again tomorrow, or add your own key.",
+        },
         { status: 429 },
       );
     }

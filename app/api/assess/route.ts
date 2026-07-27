@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const assessment = await generateStructured({
-      model: MODELS.assessment,
+      models: MODELS.assessment,
       system: ASSESSMENT_SYSTEM,
       contents: assessmentUserPrompt(concept, explanation),
       schema: AssessmentSchema,
