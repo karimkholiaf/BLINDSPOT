@@ -12,9 +12,9 @@ Three explanations of Big-O, graded against the same generated rubric by `script
 
 | Explanation | Verdict | Score |
 | --- | --- | --- |
-| Accurate, in the student's own words | `mastered` | 88 |
-| Vague, but nothing false | `shaky` | 28 |
-| Fluent, confident, and wrong | `misconception` | 8 |
+| Accurate, in the student's own words | `mastered` | 95 |
+| Vague, but nothing false | `shaky` | 30 |
+| Fluent, confident, and wrong | `misconception` | 12 |
 
 The wrong one is the longest of the three, uses the most correct terminology, and sounds the most knowledgeable. It scored the lowest. That inversion is the entire product.
 
@@ -67,7 +67,7 @@ Both calls run through one chain of models in `lib/ai.ts`, tried in order until 
 
 **Fallback: four Gemini Flash models on the free tier** — `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-flash-latest`, `gemini-3-flash-preview`. They exist so the app degrades instead of going dark once the prepaid credit is spent.
 
-A request falls through to the next model on spent credit (402), a rejected key (401/403), a rate limit (429), a server error (5xx), or a 90-second per-attempt stall cap. The stall cap earns its place: one Gemini model answers 503 "high demand", and its SDK retries that internally, which can block a request for minutes. The one status that does *not* fall through is 400 — a malformed request is a bug in this code, it would fail identically on every provider, and falling through would hide it.
+A request falls through to the next model on spent credit (402), a rejected key (401/403), a rate limit (429), a server error (5xx), or a 40-second per-attempt stall cap. The stall cap earns its place: one Gemini model answers 503 "high demand", and its SDK retries that internally, which can block a request for minutes. The one status that does *not* fall through is 400 — a malformed request is a bug in this code, it would fail identically on every provider, and falling through would hide it.
 
 The fallback is verified, not assumed: running with a deliberately invalid OpenRouter key, the request fell through to Gemini and still identified the misconception correctly, with the server logging `anthropic/claude-sonnet-5 unavailable (401 User not found.); falling through.`
 
