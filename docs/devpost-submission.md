@@ -12,9 +12,9 @@ Blindspot
 
 ## Elevator pitch
 
-> Devpost caps this field at 200 characters. The text below is **185 characters**.
+> Devpost caps this field at 200 characters. The text below is **191 characters**.
 
-Upload a lecture, explain each concept back in your own words, and Blindspot names the specific misconception you hold — telling a confidently wrong answer apart from an incomplete one.
+Fluency isn't understanding. Explain a lecture back in your own words and Blindspot names the specific belief you have wrong — scoring a confident wrong answer below an honest "I'm not sure".
 
 ---
 
