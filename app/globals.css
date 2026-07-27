@@ -16,9 +16,29 @@
   --color-muted: #5c6673;
   --color-rule: #d5dbe2;
 
+  /*
+    All three state colours clear 4.5:1 against every surface they land on.
+    They carry small text (verdict labels at 0.65rem, the eyebrow at
+    0.6875rem), so AA for normal text is the bar, not AA-large. Amber had to be
+    darkened from its natural value to get there — at #a8781c it measured
+    3.45:1 on field.
+  */
   --color-verified: #2c6e63;
-  --color-partial: #a8781c;
+  --color-partial: #7d5a10;
   --color-flag: #bc3b2f;
+
+  /*
+    The verdict card wash, opaque rather than an alpha tint. As `bg-flag/8` the
+    card composited over whatever sat behind it — in practice `--color-field`,
+    not white — which quietly cost about 0.55 of contrast ratio and put both the
+    amber and the red label under AA on their own cards. Baking the 8% over
+    `--color-surface` makes the result deterministic, and it puts the diagnosis
+    card on the same raised surface as every other card in the app.
+  */
+  --color-verified-wash: #eef3f3;
+  --color-partial-wash: #f5f2ec;
+  --color-flag-wash: #faefee;
+  --color-muted-wash: #f2f3f4;
 
   --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-body), ui-serif, Georgia, serif;
@@ -73,6 +93,20 @@ body {
   }
 }
 
+/*
+  The indeterminate meter. It sweeps rather than pulses so it reads as the same
+  instrument as the resolved meter in the diagnosis card, taking a measurement
+  it hasn't finished yet.
+*/
+@keyframes sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
 @keyframes pulse-rec {
   0%,
   100% {
@@ -93,6 +127,10 @@ body {
 
 .animate-rec {
   animation: pulse-rec 1.2s ease-in-out infinite;
+}
+
+.animate-sweep {
+  animation: sweep 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

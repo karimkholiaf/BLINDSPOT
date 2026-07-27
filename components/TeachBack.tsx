@@ -158,13 +158,20 @@ export function TeachBack({
             onSubmit();
           }}
           disabled={busy || tooShort}
+          aria-describedby={tooShort ? "teachback-hint" : undefined}
           className="bg-ink px-5 py-2.5 font-mono text-xs tracking-wide text-field transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy ? "Checking…" : "Check my understanding"}
         </button>
 
-        <span className="font-mono text-[0.7rem] text-muted">
-          {words === 0 ? "" : `${words} ${words === 1 ? "word" : "words"}`}
+        {/* A disabled control has to say why. The Uploader already does this for
+            pasted text; without it the button just reads as broken. */}
+        <span id="teachback-hint" className="font-mono text-[0.7rem] text-muted">
+          {tooShort
+            ? words === 0
+              ? "Write a sentence or two to begin."
+              : "Keep going — a sentence or two at minimum."
+            : `${words} ${words === 1 ? "word" : "words"}`}
         </span>
       </div>
 

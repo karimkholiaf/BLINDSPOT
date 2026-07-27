@@ -3,16 +3,26 @@
 import { useEffect, useState } from "react";
 import { BlindSpotTest } from "@/components/BlindSpotTest";
 import { ConceptRail } from "@/components/ConceptRail";
-import { Diagnosis } from "@/components/Diagnosis";
+import { Diagnosis, DiagnosisPending } from "@/components/Diagnosis";
 import { TeachBack } from "@/components/TeachBack";
 import { Uploader, type Source } from "@/components/Uploader";
 import type { Assessment, ConceptMap } from "@/lib/schemas";
+import { VERDICT_DISPLAY } from "@/lib/verdict";
 
 const READING_STATES = [
   "Reading the material",
   "Pulling out the concepts",
   "Writing a rubric for each one",
 ];
+
+/*
+  The phase machine runs out after ~8s but a request can legitimately take far
+  longer: a stalled model burns ATTEMPT_TIMEOUT_MS before the chain moves on,
+  so the worst case is several times the advertised wait. Leaving "usually
+  15-30 seconds" on screen for two minutes reads as a hang. Past this mark the
+  estimate is replaced with what is actually happening.
+*/
+const SLOW_AFTER_MS = 38_000;
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -35,6 +45,7 @@ export default function Home() {
   const [assessing, setAssessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState(0);
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
     if (!extracting) return;
@@ -42,11 +53,16 @@ export default function Home() {
       () => setPhase((value) => Math.min(value + 1, READING_STATES.length - 1)),
       2600,
     );
-    return () => clearInterval(timer);
+    const slowTimer = setTimeout(() => setSlow(true), SLOW_AFTER_MS);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(slowTimer);
+    };
   }, [extracting]);
 
   async function handleSource(source: Source) {
     setPhase(0);
+    setSlow(false);
     setExtracting(true);
     setError(null);
     setSourceLabel(source.label);
@@ -136,14 +152,18 @@ export default function Home() {
 
               <div className="mt-9">
                 {extracting ? (
-                  <div className="border border-rule bg-surface p-8">
+                  <div role="status" className="border border-rule bg-surface p-8">
                     <p className="eyebrow">{sourceLabel}</p>
                     <p className="mt-3 font-display text-lg text-ink">
                       {READING_STATES[phase]}
-                      <span className="animate-rec">…</span>
+                      <span aria-hidden="true" className="animate-rec">
+                        …
+                      </span>
                     </p>
-                    <p className="mt-2 font-mono text-[0.7rem] text-muted">
-                      Usually 15–30 seconds.
+                    <p className="mt-2 font-mono text-[0.7rem] leading-relaxed text-muted">
+                      {slow
+                        ? "Taking longer than usual — the model is busy, so this is falling back to a spare. Still working."
+                        : "Usually 15–30 seconds."}
                     </p>
                   </div>
                 ) : (
@@ -224,14 +244,19 @@ export default function Home() {
                   )}
 
                   {assessing && (
-                    <p className="mt-8 font-mono text-xs text-muted">
-                      Comparing your explanation against the material
-                      <span className="animate-rec">…</span>
-                    </p>
+                    <div className="mt-8">
+                      <DiagnosisPending />
+                    </div>
                   )}
 
                   {!assessing && results[activeConcept.id] && (
                     <div className="mt-8">
+                      {/* The card itself is too long to read out wholesale, so the
+                          live region carries only the verdict and the score. */}
+                      <p aria-live="polite" className="sr-only">
+                        {VERDICT_DISPLAY[results[activeConcept.id].verdict].label} —{" "}
+                        {results[activeConcept.id].masteryScore} out of 100.
+                      </p>
                       <Diagnosis assessment={results[activeConcept.id]} />
                     </div>
                   )}
@@ -243,7 +268,8 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-rule py-5 font-mono text-[0.7rem] text-muted">
-        Built for the Prometheus July AI Challenge · Concept extraction and assessment by Gemini
+        Built for the Prometheus July AI Challenge · Concept extraction and assessment by Claude
+        Sonnet 5, falling back to Gemini Flash
       </footer>
     </div>
   );

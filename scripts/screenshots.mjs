@@ -44,7 +44,7 @@ await page.getByRole("button", { name: /use the sample lecture/i }).click();
 await page.waitForTimeout(1500);
 await shot("03-extracting");
 
-await page.getByRole("navigation", { name: "Concepts" }).waitFor({ timeout: 90_000 });
+await page.getByRole("navigation", { name: "Concepts" }).waitFor({ timeout: 210_000 });
 await page.waitForTimeout(1200);
 await shot("04-concept-map");
 
@@ -55,7 +55,7 @@ await shot("05-teach-back");
 await page.getByPlaceholder("Start explaining…").fill(WRONG_EXPLANATION);
 await page.waitForTimeout(500);
 await page.getByRole("button", { name: /check my understanding/i }).click();
-await page.getByRole("region", { name: "Assessment" }).waitFor({ timeout: 90_000 });
+await page.getByRole("region", { name: "Assessment" }).waitFor({ timeout: 210_000 });
 await page.waitForTimeout(1500);
 await shot("06-diagnosis");
 await page.getByRole("region", { name: "Assessment" }).screenshot({ path: `${OUT}/07-diagnosis-card.png` });

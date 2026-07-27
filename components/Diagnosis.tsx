@@ -1,7 +1,55 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { Assessment } from "@/lib/schemas";
 import { VERDICT_DISPLAY } from "@/lib/verdict";
+
+/*
+  Assessment is the moment the product's claim is on the line, so the wait gets
+  the diagnosis card's own chrome rather than a generic skeleton: same border,
+  same eyebrow, same meter — an instrument mid-measurement, which then resolves
+  in place into the real reading. The phases name what is actually being done,
+  and the third one is the differentiator worth saying out loud.
+*/
+const CHECKING_STATES = [
+  "Reading your explanation",
+  "Checking it against the rubric",
+  "Testing for false confidence",
+];
+
+export function DiagnosisPending() {
+  const [phase, setPhase] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(
+      () => setPhase((value) => Math.min(value + 1, CHECKING_STATES.length - 1)),
+      2200,
+    );
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <section role="status" className="animate-rise border border-rule bg-surface/60 p-6 sm:p-7">
+      <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <p className="eyebrow">Measuring</p>
+        <p aria-hidden="true" className="font-mono text-[0.7rem] text-muted/60">
+          —<span>/100</span>
+        </p>
+      </header>
+
+      <div aria-hidden="true" className="mt-3 h-1 w-full overflow-hidden bg-ink/8">
+        <div className="animate-sweep h-full w-1/4 bg-muted" />
+      </div>
+
+      <p className="mt-5 font-display text-lg text-ink">
+        {CHECKING_STATES[phase]}
+        <span aria-hidden="true" className="animate-rec">
+          …
+        </span>
+      </p>
+    </section>
+  );
+}
 
 function Points({ title, items, tone }: { title: string; items: string[]; tone: string }) {
   if (items.length === 0) return null;
