@@ -18,9 +18,11 @@ import { z } from "zod";
  *
  * Ordering within Gemini is measured, not assumed — `scripts/adversarial-test.mjs`
  * pinned to each model showed 3.5-flash-lite holds the decisive judgement as
- * well as 3.6-flash at a fifth of the price. 3.5-flash is last despite being
- * nominally stronger: it is the one model observed answering 503 "high demand",
- * which its SDK retries internally and which stalls a request for minutes.
+ * well as 3.6-flash at a fifth of the price, so it sits directly behind it.
+ * `gemini-3.5-flash` is excluded entirely despite being nominally stronger than
+ * lite: it is the one model observed answering 503 "high demand", which its SDK
+ * retries internally with backoff, blocking a request for minutes rather than
+ * failing over.
  */
 export type ModelSpec = { provider: "openrouter" | "gemini"; model: string };
 
@@ -45,8 +47,17 @@ function resolveChain(): readonly ModelSpec[] {
     : [{ provider: "gemini", model: override }];
 }
 
-/** A model that is merely busy stalls rather than failing; cap each attempt. */
-const ATTEMPT_TIMEOUT_MS = 90_000;
+/**
+ * A model that is merely busy stalls rather than failing, so each attempt is
+ * capped and the chain moves on.
+ *
+ * This must stay comfortably under the routes' `maxDuration` (60s, Vercel's
+ * ceiling on the hobby tier) or the cap is unreachable: the platform would kill
+ * the request first and the fall-through would never run. 40s leaves room for a
+ * stalled leading model plus one fast fallback — flash-lite answers in about a
+ * second — inside a single request budget.
+ */
+const ATTEMPT_TIMEOUT_MS = 40_000;
 
 class AttemptTimeout extends Error {
   constructor(model: string) {
@@ -211,6 +222,11 @@ async function callOpenRouter(
  */
 function isTransient(error: unknown): boolean {
   if (error instanceof AttemptTimeout) return true;
+  // An unconfigured provider is skipped, not fatal — a deployment that has only
+  // the Gemini key set should still work, just without the Claude tier. If no
+  // provider in the chain is configured, the last error surfaces as a 500 that
+  // names the missing variable.
+  if (error instanceof MissingKeyError) return true;
   if (error instanceof ApiError) return error.status === 429 || error.status >= 500;
   if (error instanceof OpenAI.APIError) return error.status !== 400;
   return false;
