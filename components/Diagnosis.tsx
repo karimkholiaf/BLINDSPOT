@@ -41,13 +41,13 @@ export function Diagnosis({ assessment }: { assessment: Assessment }) {
         </p>
       </header>
 
-      <div
-        aria-hidden="true"
-        className="mt-3 h-px w-full bg-rule"
-        style={{
-          backgroundImage: `linear-gradient(to right, currentColor ${assessment.masteryScore}%, transparent ${assessment.masteryScore}%)`,
-        }}
-      />
+      {/* Reads as a meter rather than a stray rule, which the hairline version did not. */}
+      <div aria-hidden="true" className="mt-3 h-1 w-full bg-ink/8">
+        <div
+          className={`h-full ${display.bar}`}
+          style={{ width: `${Math.max(2, Math.min(100, assessment.masteryScore))}%` }}
+        />
+      </div>
 
       <p className="mt-5 max-w-prose font-body text-[1.05rem] leading-relaxed text-ink">
         {assessment.headline}
@@ -82,7 +82,13 @@ export function Diagnosis({ assessment }: { assessment: Assessment }) {
       )}
 
       {(assessment.gotRight.length > 0 || assessment.missed.length > 0) && (
-        <div className="mt-6 grid gap-6 border-t border-rule/70 pt-5 sm:grid-cols-2">
+        // Two columns only when both sides have content — otherwise a lone list
+        // gets stranded in half the width and reads as a layout bug.
+        <div
+          className={`mt-6 grid gap-x-10 gap-y-6 border-t border-rule/70 pt-5 ${
+            assessment.gotRight.length > 0 && assessment.missed.length > 0 ? "sm:grid-cols-2" : ""
+          }`}
+        >
           <Points title="You demonstrated" items={assessment.gotRight} tone="text-verified" />
           <Points title="Still missing" items={assessment.missed} tone="text-partial" />
         </div>

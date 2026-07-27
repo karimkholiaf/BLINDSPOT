@@ -163,6 +163,28 @@ export default function Home() {
 
             <div className="lg:pt-2">
               <BlindSpotTest />
+
+              {/* Three steps because there are three; the numbering encodes a real
+                  sequence rather than decorating the column. */}
+              <ol className="mt-8 divide-y divide-rule border-t border-rule">
+                {[
+                  ["Upload", "It reads your lecture and pulls out the concepts, writing a rubric for each."],
+                  ["Explain", "You teach each concept back, typed or out loud, without looking."],
+                  ["Diagnose", "It separates what you half-know from what you have actively wrong."],
+                ].map(([step, detail], index) => (
+                  <li key={step} className="flex gap-4 py-3.5">
+                    <span className="font-mono text-[0.7rem] leading-6 text-muted">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-display text-sm text-ink">{step}</span>
+                      <span className="mt-0.5 block font-body text-[0.85rem] leading-relaxed text-muted">
+                        {detail}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
             </div>
           </div>
         ) : (
@@ -176,7 +198,7 @@ export default function Home() {
               />
             </aside>
 
-            <div className="min-w-0">
+            <div className="min-w-0 max-w-3xl">
               <p className="eyebrow mb-8">{map.sourceTitle}</p>
 
               {activeConcept && (

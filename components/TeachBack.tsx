@@ -119,7 +119,7 @@ export function TeachBack({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           disabled={busy}
-          rows={9}
+          rows={7}
           placeholder="Start explaining…"
           className="w-full resize-y border border-rule bg-surface p-4 font-body text-[1rem] leading-relaxed text-ink placeholder:text-muted/60 disabled:opacity-60"
         />

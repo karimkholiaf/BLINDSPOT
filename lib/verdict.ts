@@ -7,7 +7,7 @@ import type { Verdict } from "./schemas";
  */
 export const VERDICT_DISPLAY: Record<
   Verdict,
-  { label: string; glyph: string; color: string; tint: string; border: string }
+  { label: string; glyph: string; color: string; tint: string; border: string; bar: string }
 > = {
   mastered: {
     label: "Solid",
@@ -15,6 +15,7 @@ export const VERDICT_DISPLAY: Record<
     color: "text-verified",
     tint: "bg-verified/8",
     border: "border-verified/35",
+    bar: "bg-verified",
   },
   shaky: {
     label: "Thin in places",
@@ -22,6 +23,7 @@ export const VERDICT_DISPLAY: Record<
     color: "text-partial",
     tint: "bg-partial/8",
     border: "border-partial/35",
+    bar: "bg-partial",
   },
   misconception: {
     label: "Blind spot",
@@ -29,6 +31,7 @@ export const VERDICT_DISPLAY: Record<
     color: "text-flag",
     tint: "bg-flag/8",
     border: "border-flag/40",
+    bar: "bg-flag",
   },
   not_demonstrated: {
     label: "Not enough to go on",
@@ -36,6 +39,7 @@ export const VERDICT_DISPLAY: Record<
     color: "text-muted",
     tint: "bg-muted/8",
     border: "border-rule",
+    bar: "bg-muted",
   },
 };
 
