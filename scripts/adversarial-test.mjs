@@ -25,7 +25,10 @@ const EXPLANATIONS = [
     label: "accurate and complete",
     expect: "mastered",
     expectMisconception: false,
-    text: `Big-O describes how an algorithm's running time grows as the input gets larger. It's an asymptotic upper bound, so you drop constant factors and lower-order terms — 3n squared plus 5n plus 100 is just O(n squared). The important thing is that it's about the shape of the growth curve, not about actual speed in seconds. Two algorithms in the same class can have very different real-world performance, and an algorithm with worse asymptotic complexity can easily win on small inputs because the constants dominate there.`,
+    // Deliberately covers both the formal definition and the intuition, because
+    // extraction may split Big-O into a narrow "formal definition" concept whose
+    // rubric an intuition-only answer would legitimately fail.
+    text: `Formally, f of n is O of g of n if there exist positive constants c and n-nought such that f of n is less than or equal to c times g of n for every n greater than or equal to n-nought. So it's an asymptotic upper bound: beyond some input size, the function is bounded above by a constant multiple of g. In practice that means you drop constant factors and lower-order terms — 3n squared plus 5n plus 100 is just O(n squared). The key thing is that it describes how the running time grows as the input grows, not how fast the algorithm is in seconds on a particular machine. Because the constant is discarded, a worse asymptotic class can genuinely be faster on small inputs, and only has to lose once n gets large enough.`,
   },
   {
     id: "B",
@@ -71,7 +74,10 @@ const target =
   map.concepts.find((c) => /complexity|growth/i.test(`${c.id} ${c.title}`)) ??
   map.concepts[0];
 
-console.log(`\nGrading three explanations of "${target.title}".\n`);
+console.log(`\nGrading three explanations of "${target.title}".`);
+console.log("Rubric the model is grading against:");
+for (const point of target.keyPoints) console.log(`    · ${point}`);
+console.log("");
 
 const results = [];
 for (const item of EXPLANATIONS) {

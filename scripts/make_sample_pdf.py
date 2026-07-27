@@ -28,7 +28,6 @@ from reportlab.platypus import (
     KeepTogether,
     ListFlowable,
     ListItem,
-    PageBreak,
     Paragraph,
     Preformatted,
     SimpleDocTemplate,
@@ -111,7 +110,7 @@ S = {
         fontSize=12.5,
         leading=15,
         textColor=HEADING,
-        spaceBefore=12,
+        spaceBefore=10,
         spaceAfter=4,
         keepWithNext=1,
     ),
@@ -130,18 +129,18 @@ S = {
         "body",
         parent=_base["Normal"],
         fontName="Times-Roman",
-        fontSize=11,
-        leading=14.1,
+        fontSize=10.8,
+        leading=13.2,
         textColor=INK,
         alignment=TA_JUSTIFY,
-        spaceAfter=6,
+        spaceAfter=5,
     ),
     "bullet": ParagraphStyle(
         "bullet",
         parent=_base["Normal"],
         fontName="Times-Roman",
         fontSize=10.4,
-        leading=13.4,
+        leading=13,
         textColor=INK,
         alignment=TA_JUSTIFY,
         spaceAfter=2.5,
@@ -225,9 +224,11 @@ def bullets(items: list[str]) -> ListFlowable:
     return ListFlowable(
         [ListItem(Paragraph(t, S["bullet"]), leftIndent=16) for t in items],
         bulletType="bullet",
-        bulletFontName="Helvetica",
-        bulletFontSize=7,
-        bulletOffsetY=1.5,
+        # Symbol is the one standard font whose bullet round-trips through text
+        # extraction as U+2022 rather than an unmapped control character.
+        bulletFontName="Symbol",
+        bulletFontSize=6.5,
+        bulletOffsetY=-3,
         start="•",
         leftIndent=14,
         spaceBefore=1,
@@ -235,11 +236,29 @@ def bullets(items: list[str]) -> ListFlowable:
     )
 
 
-def code(text: str, width: float) -> KeepTogether:
-    """A monospaced pseudocode block in a lightly shaded box."""
-    escaped = text.strip("\n").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def numbered(items: list[str]) -> ListFlowable:
+    return ListFlowable(
+        [ListItem(Paragraph(t, S["bullet"]), leftIndent=18) for t in items],
+        bulletType="1",
+        bulletFormat="%s.",
+        bulletFontName="Times-Bold",
+        bulletFontSize=10.4,
+        leftIndent=16,
+        spaceBefore=1,
+        spaceAfter=6,
+    )
+
+
+def code(text: str, width: float, heading: str | None = None) -> KeepTogether:
+    """A monospaced pseudocode block in a lightly shaded box.
+
+    Preformatted renders its text verbatim (no XML parsing), so `<` and `>` in
+    the pseudocode must be passed through unescaped. An optional heading is kept
+    in the same block, since keepWithNext does not reliably bind a heading to a
+    following KeepTogether.
+    """
     block = Table(
-        [[Preformatted(escaped, S["code"])]],
+        [[Preformatted(text.strip("\n"), S["code"])]],
         colWidths=[width],
         style=TableStyle(
             [
@@ -252,7 +271,8 @@ def code(text: str, width: float) -> KeepTogether:
             ]
         ),
     )
-    return KeepTogether([Spacer(1, 1), block, Spacer(1, 7)])
+    lead = [h3(heading)] if heading else [Spacer(1, 1)]
+    return KeepTogether(lead + [block, Spacer(1, 7)])
 
 
 def callout(text: str, width: float) -> KeepTogether:
@@ -392,41 +412,38 @@ def build_story(w: float) -> list:
                          spaceAfter=10))
 
     st.append(p(
-        "These notes accompany Lecture 4 and are written to be read on their own, so "
-        "the worked examples are given in full rather than left on the whiteboard. "
-        "Everything here is examinable. The exercises at the end are not marked, but "
-        "question 2 of Coursework 1 assumes you have attempted them."))
+        "These notes accompany Lecture 4 and are written to be read on their own, so the "
+        "worked examples are given in full rather than left on the whiteboard. Everything "
+        "here is examinable, and question 2 of Coursework 1 assumes you have attempted the "
+        "exercises at the end."))
 
     st.append(h3("Learning outcomes"))
     st.append(bullets([
         "State the definition of Big-O notation and apply it to a polynomial cost function.",
-        "Order the common complexity classes by growth rate and predict how each responds "
-        "to a change in input size.",
-        "Distinguish best-case, average-case and worst-case analysis, and say which one a "
-        "particular engineering decision depends on.",
+        "Order the common complexity classes by growth rate, and distinguish best-, average- "
+        "and worst-case analysis.",
         "Explain why an asymptotic classification does not by itself determine which of two "
         "algorithms runs faster on a given input.",
-        "Distinguish auxiliary space from total space, and classify a sorting algorithm as "
-        "in-place or out-of-place.",
+        "Distinguish auxiliary space from total space, and classify a sort as in-place or "
+        "out-of-place.",
     ]))
 
     # ---------------- 1 ----------------
     st.append(h2("1. Why we measure complexity"))
     st.append(p(
-        "Two students submit programs that solve the same problem. On the same test file, "
-        "one finishes in 0.8 seconds and the other in 2.1 seconds. It is tempting to "
-        "conclude that the first student has the better algorithm. That conclusion is not "
-        "supported by the measurement. What was measured is the behaviour of one "
-        "implementation, written in one language, compiled with one set of options, running "
-        "on one machine, against one input. Change any of those and the ranking can change."))
+        "Two students submit programs that solve the same problem. On the same test file, one "
+        "finishes in 0.8 seconds and the other in 2.1 seconds, and it is tempting to conclude "
+        "that the first student has the better algorithm. The measurement does not support "
+        "that. What was measured is the behaviour of one implementation, written in one "
+        "language, compiled with one set of options, running on one machine, against one "
+        "input. Change any of those and the ranking can change."))
     st.append(p(
-        "The confounding factors are numerous. Processor speed and instruction set matter. So "
-        "does the memory hierarchy: an algorithm whose working set fits in cache can beat one "
-        "that does fewer operations but scatters them across memory. Compiler optimisation "
-        "level matters, sometimes by a factor of three. Choice of language matters enormously, "
-        "since a careless program in a compiled language routinely outruns a careful one in an "
-        "interpreted language by a factor of thirty or more, which is easily enough to "
-        "disguise a genuinely worse method."))
+        "The confounding factors are numerous. Processor speed and instruction set matter, and "
+        "so does the memory hierarchy: an algorithm whose working set fits in cache can beat "
+        "one that does fewer operations but scatters them across memory. Choice of language "
+        "matters enormously, since a careless program in a compiled language routinely outruns "
+        "a careful one in an interpreted language by a factor of thirty or more, which is "
+        "easily enough to disguise a genuinely worse method."))
     st.append(p(
         "We want to compare the methods, not the circumstances, so the standard approach "
         "abstracts away from the machine entirely. Choose a measure of input size, normally "
@@ -435,31 +452,26 @@ def build_story(w: float) -> list:
         "in a sorting routine. Then count how many times that operation is performed as a "
         "function of n, and call the result T(n). Because T(n) counts operations rather than "
         "seconds, it is the same whoever compiles the program and whatever hardware they run "
-        "it on."))
-    st.append(p(
-        "There is a second, more practical reason to work this way. A stopwatch reading tells "
-        "you about the input you happened to try; a cost function tells you what will happen "
-        "when the input is a thousand times larger. Systems are rarely retired because they "
-        "are too slow on today's data. They are retired because the data grew and the cost "
-        "grew faster, and complexity analysis is the tool that lets you see that coming while "
-        "the system still looks healthy."))
+        "it on. It is also predictive in a way a stopwatch is not: a timing tells you about "
+        "the input you happened to try, whereas a cost function tells you what will happen "
+        "when the input is a thousand times larger. Systems are rarely retired for being slow "
+        "on today's data; they are retired because the data grew and the cost grew faster."))
     st.append(p(
         "A small example shows what this buys us. Suppose algorithm A performs 100n "
         "elementary operations and algorithm B performs n². For n = 10, A does 1,000 "
         "operations and B does 100, so B is ten times cheaper. At n = 100 they are level, at "
-        "10,000 operations each. For n = 1,000, A does 100,000 and B does 1,000,000, so A is "
-        "now ten times cheaper, and the gap keeps widening. Neither algorithm is simply "
-        "\"the fast one\": which is faster depends on n, and the two curves cross at a "
-        "specific place. Keep this example in mind; we return to the crossing point in "
-        "Section 5."))
+        "10,000 each. For n = 1,000, A does 100,000 and B does 1,000,000, so A is now ten "
+        "times cheaper and the gap keeps widening. Neither algorithm is simply \"the fast "
+        "one\": which is faster depends on n, and the two curves cross at a specific place. "
+        "We return to that crossing point in Section 5."))
 
     # ---------------- 2 ----------------
     st.append(h2("2. Big-O notation"))
     st.append(p(
-        "Counting exact operations is still more detail than we usually want. The counts "
-        "3n² + 5n + 100 and 7n² + 2n + 4 describe algorithms that behave the same way "
-        "as n grows, even though the numbers differ. Big-O notation expresses that shared "
-        "behaviour and discards the rest."))
+        "Counting exact operations is still more detail than we want. The counts 3n² + 5n "
+        "+ 100 and 7n² + 2n + 4 describe algorithms that behave the same way as n grows, "
+        "even though the numbers differ. Big-O notation expresses that shared behaviour and "
+        "discards the rest."))
     st.append(callout(
         "<b>Definition.</b> Let f and g be functions from the positive integers to the "
         "non-negative reals. We say that <i>f(n) is O(g(n))</i> if there exist a constant "
@@ -526,29 +538,24 @@ def build_story(w: float) -> list:
         "n<sub>0</sub> = 10. Both are valid, because the definition asks for the existence of "
         "some c and n<sub>0</sub> rather than the best ones."))
     st.append(p(
-        "It is worth being explicit about why discarding the constants is legitimate, because "
-        "the same step is what makes the result blunt. The constant multiplier reflects how "
-        "much a single elementary step costs on a given machine with a given compiler, and "
-        "those are precisely the factors Section 1 set out to eliminate; removing them is "
-        "what makes the classification portable. The price is that the classification then "
-        "retains no information at all about the regime in which those constants dominate. "
-        "Big-O answers one question, namely how cost scales with input size, and it answers "
-        "no other question."))
+        "Be explicit about why discarding the constants is legitimate, because the same step "
+        "is what makes the result blunt. The constant multiplier reflects how much a single "
+        "elementary step costs on a given machine with a given compiler, precisely the "
+        "factors Section 1 set out to eliminate; removing them is what makes the "
+        "classification portable. The price is that it then retains no information about the "
+        "regime in which those constants dominate. Big-O answers one question, how cost "
+        "scales with input size, and it answers no other question."))
     st.append(p(
-        "Two companions to Big-O appear in the literature. Ω(g(n)) is the mirror image, "
-        "an asymptotic <i>lower</i> bound, meaning f grows at least as fast as g. "
-        "Θ(g(n)) means both at once, an asymptotically tight bound, and is the honest "
-        "notation when we know the growth rate exactly rather than merely bounding it above. "
-        "Informally most engineers write \"O\" where they mean \"Θ\", but you should "
-        "know the difference when you read a proof."))
+        "Two companions appear in the literature: Ω(g(n)) is the mirror image, an "
+        "asymptotic <i>lower</i> bound, and Θ(g(n)) is an asymptotically tight bound, "
+        "meaning both at once."))
 
     # ---------------- 3 ----------------
     st.append(h2("3. The growth-rate hierarchy"))
     st.append(p(
         "A small number of complexity classes account for most of the algorithms you will "
-        "meet. Learning their relative behaviour is more useful than memorising individual "
-        "results, because it lets you judge quickly whether a proposed approach is plausible "
-        "at the scale you care about."))
+        "meet. Learning their relative behaviour lets you judge quickly whether a proposed "
+        "approach is plausible at the scale you care about."))
     st.append(data_table(
         ["Class", "Name", "Typical example", "n = 10", "n = 100", "n = 1,000",
          "n = 1,000,000"],
@@ -565,7 +572,7 @@ def build_story(w: float) -> list:
              "1.3 × 10<super>30</super>", "≈ 10<super>301</super>", "beyond "
              "astronomical"],
         ],
-        col_widths=[w * 0.13, w * 0.13, w * 0.28, w * 0.08, w * 0.11, w * 0.11, w * 0.16],
+        col_widths=[w * 0.13, w * 0.13, w * 0.24, w * 0.09, w * 0.12, w * 0.12, w * 0.17],
         right_align_from=3,
     ))
     st.append(caption(
@@ -573,21 +580,18 @@ def build_story(w: float) -> list:
         "figures are rounded."))
     st.append(p(
         "A useful way to internalise the table is to ask what happens when the input doubles. "
-        "An O(1) algorithm is unaffected. An O(log n) algorithm performs one extra step. An "
-        "O(n) algorithm does twice the work, and an O(n log n) algorithm slightly more than "
-        "twice. An O(n²) algorithm does four times the work, so a tenfold increase in "
-        "input becomes a hundredfold increase in cost. An O(2<super>n</super>) algorithm "
-        "squares its own workload, which is why exponential algorithms hit a wall hardware "
-        "cannot move: a machine a thousand times faster buys roughly ten more elements of "
-        "input, and then you are stuck again."))
+        "An O(1) algorithm is unaffected and an O(log n) algorithm performs one extra step. "
+        "An O(n) algorithm does twice the work, an O(n log n) algorithm slightly more than "
+        "twice, and an O(n²) algorithm four times, so a tenfold increase in input becomes "
+        "a hundredfold increase in cost. An O(2<super>n</super>) algorithm squares its own "
+        "workload, which is why exponential algorithms hit a wall hardware cannot move: a "
+        "machine a thousand times faster buys roughly ten more elements of input."))
     st.append(p(
-        "Two technical notes. The base of the logarithm never appears in the classification, "
-        "because changing base multiplies by a constant and constants are dropped, so "
-        "O(log n) is unambiguous. And the classes are not equally spaced in practice: the "
-        "step from O(n²) to O(n log n) usually decides whether a program is viable on "
-        "large data, whereas the step from O(n) to O(n log n) is often invisible, since at "
-        "n = 1,000,000 the factor log₂ n is only about 20 and a better implementation "
-        "can easily recover that."))
+        "Note also that the base of the logarithm never appears in the classification, since "
+        "changing base multiplies by a constant. And the classes are not equally spaced in "
+        "practice: the step from O(n²) to O(n log n) usually decides whether a program is "
+        "viable on large data, whereas the step from O(n) to O(n log n) is often invisible, "
+        "since at n = 1,000,000 the factor log<sub>2</sub> n is only about 20."))
 
     # ---------------- 4 ----------------
     st.append(h2("4. Best case, average case and worst case"))
@@ -595,67 +599,58 @@ def build_story(w: float) -> list:
         "Input size alone does not determine how much work an algorithm does: two arrays of "
         "the same length can send the same routine down very different paths. A complete "
         "analysis therefore reports three quantities, the fewest operations over all inputs "
-        "of size n (best case), the most (worst case), and the expected number under some "
-        "stated distribution of inputs (average case). These are separate results and are "
-        "frequently in different complexity classes."))
-    st.append(h3("Linear search"))
-    st.append(code(
-        """
+        "of size n (best case), the most (worst case), and the expected number under a stated "
+        "distribution (average case). These are separate results, frequently in different "
+        "complexity classes."))
+    st.append(code(heading="Linear search", width=w, text="""
 function LINEAR-SEARCH(A, target):
     for i = 0 to length(A) - 1:
         if A[i] == target:
             return i                 # found it; stop immediately
     return NOT_FOUND                 # fell off the end
-""", w))
+"""))
     st.append(p(
         "The best case is one comparison, when the target sits at index 0, so O(1). The worst "
         "case is n comparisons, when the target is in the last position or absent altogether, "
         "so O(n). For the average case we must state an assumption: if the target is present "
         "and equally likely to be at any index, the expected number of comparisons is "
-        "(n + 1) / 2, which is still O(n) once the constant is dropped. An average-case result "
-        "is only as trustworthy as the assumption behind it, and a workload in which the same "
-        "few records are looked up repeatedly will not match this one."))
-    st.append(h3("Quicksort"))
-    st.append(code(
-        """
+        "(n + 1) / 2, still O(n) once the constant is dropped. An average-case result is only "
+        "as trustworthy as the assumption behind it."))
+    st.append(code(heading="Quicksort", width=w, text="""
 function QUICKSORT(A, lo, hi):
     if lo >= hi:
         return                       # zero or one element: already sorted
     p = PARTITION(A, lo, hi)         # choose a pivot, move smaller items left
     QUICKSORT(A, lo, p - 1)          # sort the left part
     QUICKSORT(A, p + 1, hi)          # sort the right part
-""", w))
+"""))
     st.append(p(
         "Each call to PARTITION examines every element between lo and hi once, so the work at "
-        "any one level of the recursion is at most n. The total cost is therefore n "
-        "multiplied by the depth of the recursion, and everything depends on how well the "
-        "pivot splits the array."))
+        "any one level of the recursion is at most n. The total cost is therefore n times the "
+        "depth of the recursion, and everything depends on how well the pivot splits the "
+        "array."))
     st.append(p(
         "When pivots land near the median, each call halves the range and the recursion is "
-        "about log₂ n levels deep. That gives n × log n work overall, so quicksort "
+        "about log<sub>2</sub> n levels deep. That gives n × log n work overall, so quicksort "
         "is O(n log n) in the average case, and random inputs are overwhelmingly likely to "
         "behave this way. When pivots land badly the picture changes completely. If the pivot "
         "is always the smallest or largest remaining element, each call removes just one item "
-        "and the recursion is n levels deep, giving n + (n - 1) + (n - 2) + ... + 1 = "
-        "n(n + 1) / 2 comparisons. So quicksort is O(n log n) on average but O(n²) in "
-        "the worst case. The classic way to trigger the worst case is to hand a "
-        "last-element-pivot implementation an array that is already sorted, which is an "
-        "unfortunately common situation in real systems."))
+        "and the recursion is n levels deep, giving n(n + 1) / 2 comparisons. So quicksort is "
+        "O(n log n) on average but O(n²) in the worst case. The classic way to trigger "
+        "the worst case is to hand a last-element-pivot implementation an array that is "
+        "already sorted, an unfortunately common situation in real systems."))
     st.append(p(
         "Practical implementations defend against this rather than accepting it. Choosing the "
         "pivot at random, or as the median of the first, middle and last elements, makes the "
         "degenerate case vanishingly unlikely to arise by accident. Introsort goes further "
         "and monitors recursion depth, switching to heapsort if the depth exceeds roughly "
-        "2 log₂ n, which converts the O(n²) worst case into a hard O(n log n) "
+        "2 log<sub>2</sub> n, which converts the O(n²) worst case into a hard O(n log n) "
         "guarantee while keeping quicksort's speed on typical input."))
     st.append(p(
-        "Which of the three cases you should care about is an engineering question, not a "
-        "mathematical one. A batch job that runs overnight cares about the average, because "
-        "the occasional bad input is amortised away; a request handler with a hard latency "
-        "budget cares about the worst case, because an average is no defence when the "
-        "deadline is missed. The best case is rarely decisive on its own, though insertion "
-        "sort's O(n) best case on nearly-sorted data is the reason it appears in the next "
-        "section at all."))
+        "Which case you should care about is an engineering question. A batch job that runs "
+        "overnight cares about the average; a request handler with a hard latency budget "
+        "cares about the worst case, because an average is no defence when a deadline is "
+        "missed."))
 
     # ---------------- 5 ----------------
     st.append(h2("5. Why asymptotic analysis can mislead on small inputs"))
@@ -666,30 +661,38 @@ function QUICKSORT(A, lo, hi):
         "classification tells you nothing whatsoever about small inputs."))
     st.append(p(
         "The constants that were dropped are not fictions. They stand for real work: the "
-        "overhead of a function call, the cost of pushing and popping a stack frame, pivot "
-        "selection, bounds checks, allocating a scratch buffer, and above all the memory "
-        "access pattern, since a sequential sweep through a small array may sit entirely in "
-        "L1 cache while a cleverer algorithm jumps around and misses. On a large input these "
-        "costs are diluted across a great deal of productive work. On a small input they are "
-        "essentially the whole cost."))
+        "overhead of a function call, pushing and popping a stack frame, pivot selection, "
+        "bounds checks, allocating a scratch buffer, and above all the memory access pattern, "
+        "since a sequential sweep through a small array may sit entirely in L1 cache while a "
+        "cleverer algorithm jumps around and misses. On a large input these costs are diluted "
+        "across a great deal of productive work; on a small input they are the whole cost."))
     st.append(p(
         "Sorting is the standard illustration. Insertion sort is O(n²), which sounds "
         "disqualifying, but its constant factor is about as small as an algorithm's can be. "
-        "Each step performs one comparison and one shift, it touches memory in a strictly "
-        "sequential pattern, it makes no recursive calls, and it allocates nothing. It also "
-        "has an O(n) best case, so on data that is already nearly ordered it barely does any "
-        "work at all. Quicksort's per-call overhead is small but not zero, and on a "
-        "twelve-element array you pay that overhead repeatedly in exchange for very little "
-        "actual sorting."))
+        "Each step performs one comparison and one shift, it touches memory sequentially, it "
+        "makes no recursive calls, and it allocates nothing. It also has an O(n) best case, "
+        "so on nearly ordered data it barely does any work. Quicksort's per-call overhead is "
+        "small but not zero, and on a twelve-element array you pay it repeatedly in exchange "
+        "for very little actual sorting."))
+    st.append(code(
+        """
+function INSERTION-SORT(A, lo, hi):
+    for i = lo + 1 to hi:
+        key = A[i]
+        j = i - 1
+        while j >= lo and A[j] > key:
+            A[j + 1] = A[j]          # shift the larger element right
+            j = j - 1
+        A[j + 1] = key
+""", w))
     st.append(p(
         "An illustrative cost model makes the shape of the trade-off visible. Suppose "
-        "insertion sort costs about 0.5n² units and quicksort about 2n log₂ n + 30 "
+        "insertion sort costs about 0.5n² units and quicksort about 2n log<sub>2</sub> n + 30 "
         "units, the trailing 30 standing for per-call setup that does not shrink with n:"))
     st.append(data_table(
-        ["n", "insertion sort ≈ 0.5n²", "quicksort ≈ 2n log₂ n + 30",
+        ["n", "insertion sort ≈ 0.5n²", "quicksort ≈ 2n log<sub>2</sub> n + 30",
          "faster in this model"],
         [
-            ["4", "8", "46", "insertion sort, by about 6×"],
             ["8", "32", "78", "insertion sort, by about 2.4×"],
             ["16", "128", "158", "insertion sort, narrowly"],
             ["20", "200", "203", "level pegging (the crossover)"],
@@ -716,22 +719,14 @@ function QUICKSORT(A, lo, hi):
         "arrays, both stop subdividing once a partition or run falls below a fixed threshold "
         "of roughly 10 to 30 elements and finish that block with insertion sort, precisely "
         "because insertion sort's lower overhead beats quicksort's asymptotically better "
-        "complexity on small arrays. Library authors treat this as routine engineering rather "
-        "than as a special case.", w))
+        "complexity on small arrays. The exact cut-off is a tuning constant, 16 in one widely "
+        "used std::sort implementation and a few dozen in Timsort, and library authors treat "
+        "choosing it as routine engineering rather than as a special case.", w))
     st.append(p(
         "The hybrid is easy to write, and you will implement one in the lab session:"))
     st.append(code(
         """
 SMALL = 16                           # tuned per library; typically 10 to 30
-
-function INSERTION-SORT(A, lo, hi):
-    for i = lo + 1 to hi:
-        key = A[i]
-        j = i - 1
-        while j >= lo and A[j] > key:
-            A[j + 1] = A[j]          # shift the larger element right
-            j = j - 1
-        A[j + 1] = key
 
 function HYBRID-SORT(A, lo, hi):
     if hi - lo + 1 <= SMALL:
@@ -742,35 +737,27 @@ function HYBRID-SORT(A, lo, hi):
     HYBRID-SORT(A, p + 1, hi)
 """, w))
     st.append(p(
-        "The same pattern appears well outside sorting. Strassen's matrix multiplication has "
-        "a better exponent than the schoolbook algorithm, but its bookkeeping overhead means "
-        "implementations only switch to it above dimensions in the hundreds. A linear scan of "
-        "a twenty-element array frequently beats a hash table lookup, because computing the "
-        "hash and following a pointer costs more than twenty sequential comparisons in cache. "
-        "In each case the asymptotically inferior method wins in a bounded region, and that "
-        "region is often exactly where real workloads live."))
-    st.append(p(
-        "The practical guidance follows directly. Use asymptotic analysis to choose the "
-        "family of algorithms when inputs are large or unbounded, since nothing else predicts "
-        "scaling. Do not use it to choose between candidates when the input is small or "
-        "tightly bounded; there, measure on representative data and expect the constants to "
-        "decide. When input size varies across the whole range, do what the standard "
-        "libraries do and combine the two."))
+        "The same pattern appears outside sorting: implementations of Strassen's matrix "
+        "multiplication only switch to it above dimensions in the hundreds, and a linear scan "
+        "of a twenty-element array frequently beats a hash table lookup. The guidance follows "
+        "directly. Use asymptotic analysis to choose the family of algorithms when inputs are "
+        "large or unbounded, but not to choose between candidates when the input is small or "
+        "tightly bounded; there, measure and expect the constants to decide."))
 
     # ---------------- 6 ----------------
     st.append(h2("6. Space complexity"))
     st.append(p(
-        "Everything so far has concerned time, but memory is analysed the same way and with "
-        "the same notation: space complexity expresses how the memory an algorithm requires "
-        "grows with input size n. One distinction must be kept clear, between two different "
-        "things people mean by \"the space it uses\"."))
+        "Memory is analysed the same way and with the same notation: space complexity "
+        "expresses how the memory an algorithm requires grows with input size n. One "
+        "distinction must be kept clear, between two things people mean by \"the space it "
+        "uses\"."))
     st.append(p(
         "<b>Total space</b> counts everything, including the input itself. Since any algorithm "
-        "that must read all of its input occupies at least O(n) total space, this measure "
-        "rarely distinguishes one algorithm from another and is not usually what is quoted. "
-        "<b>Auxiliary space</b> counts only the extra memory the algorithm allocates beyond "
-        "the input: temporary arrays, bookkeeping structures, and the recursion stack. This is "
-        "the interesting figure, and it is what is meant when a textbook says an algorithm "
+        "that reads all of its input occupies at least O(n) total space, this measure rarely "
+        "distinguishes one algorithm from another and is not usually what is quoted. "
+        "<b>Auxiliary space</b> counts only the extra memory allocated beyond the input: "
+        "temporary arrays, bookkeeping structures, and the recursion stack. That is the "
+        "interesting figure, and it is what is meant when a textbook says an algorithm "
         "\"uses O(1) space\". An algorithm whose auxiliary space is O(1), or O(log n) for the "
         "recursion stack alone, is called <b>in-place</b>; one that needs auxiliary space "
         "proportional to the input is <b>out-of-place</b>."))
@@ -790,34 +777,24 @@ function HYBRID-SORT(A, lo, hi):
     st.append(p(
         "Two rows deserve comment. Mergesort is the canonical out-of-place sort: merging two "
         "sorted halves requires somewhere to put the result, so it needs a scratch buffer "
-        "proportional to n. In exchange it offers an O(n log n) guarantee in the worst case, "
-        "not merely on average, and it is stable. Quicksort is called in-place because it "
-        "rearranges elements within the original array, but that is not free: each pending "
-        "recursive call occupies a stack frame, so balanced partitions cost O(log n) "
-        "auxiliary space and degenerate ones cost O(n). Implementations cap this by recursing "
-        "into the smaller side first and looping on the larger. Forgetting that the recursion "
-        "stack is auxiliary space is one of the commonest mistakes in this part of the "
-        "module."))
+        "proportional to n, and in exchange it offers an O(n log n) guarantee in the worst "
+        "case. Quicksort is called in-place because it rearranges elements within the "
+        "original array, but that is not free: each pending recursive call occupies a stack "
+        "frame, so balanced partitions cost O(log n) auxiliary space and degenerate ones "
+        "O(n). Forgetting that the recursion stack is auxiliary space is a common mistake."))
     st.append(p(
-        "Time and space are frequently exchangeable, and choosing between them is a design "
-        "decision rather than a matter of correctness. Memoising a recursive function trades "
-        "O(n) memory for an often dramatic reduction in time; counting sort buys linear time "
-        "by allocating an array the size of the key range. The trade is not always available "
-        "on favourable terms: on an embedded controller with sixty-four kilobytes of RAM, or "
-        "when the dataset only just fits in memory, auxiliary space is the binding constraint "
-        "and an out-of-place algorithm is not an option however good its time bound looks. "
-        "Note also that the two are not fully independent, since a large auxiliary buffer "
-        "costs time to allocate and to touch and evicts other data from cache. That is one "
-        "more channel through which the constant factors of Section 5 make themselves felt."))
+        "Time and space are frequently exchangeable: memoising a recursive function trades "
+        "O(n) memory for an often dramatic reduction in time. The trade is not always "
+        "available on favourable terms, though. When the dataset only just fits in memory, "
+        "auxiliary space is the binding constraint and an out-of-place algorithm is not an "
+        "option however good its time bound looks."))
 
     # ---------------- Summary ----------------
     st.append(h2("Summary"))
     st.append(bullets([
         "Timing measurements describe an implementation on a machine; complexity analysis "
-        "describes the method, which is why we count operations as a function of input "
-        "size n.",
-        "f(n) is O(g(n)) when f(n) ≤ c · g(n) for all n beyond some n<sub>0</sub>. "
-        "It is an asymptotic upper bound on growth rate.",
+        "describes the method. f(n) is O(g(n)) when f(n) ≤ c · g(n) for all n beyond "
+        "some n<sub>0</sub>, an asymptotic upper bound on growth rate.",
         "Big-O describes how cost scales with input size, not how many seconds an algorithm "
         "takes. Constant factors and lower-order terms are dropped, so 3n² + 5n + 100 "
         "is O(n²).",
@@ -831,25 +808,15 @@ function HYBRID-SORT(A, lo, hi):
     ]))
 
     # ---------------- Exercises ----------------
-    st.append(h2("Exercises"))
-    st.append(p(
-        "Not assessed, but recommended before the lab session. Solutions are discussed in "
-        "Thursday's session rather than published."))
-    st.append(bullets([
-        "<b>1.</b> Using the definition directly, show that 7n + 2n log₂ n + 40 is "
-        "O(n log n) by exhibiting a suitable c and n<sub>0</sub>.",
-        "<b>2.</b> An algorithm performs T(n) = 6n² + 200n operations. For which values "
-        "of n does the quadratic term exceed the linear term? Comment on what this implies "
-        "about the range of n over which the label O(n²) is informative.",
-        "<b>3.</b> Write down an input of length 8 that forces a quicksort implementation "
-        "using the last element as pivot into its worst case, and count the comparisons. "
-        "Propose two changes that avoid it, and state what each costs.",
-        "<b>4.</b> A team replaces an O(n²) routine with an O(n log n) one and finds the "
-        "program runs measurably slower in production. Give three explanations consistent "
-        "with this handout, and describe an experiment that would distinguish between them.",
-        "<b>5.</b> You must sort 40 million records on a machine whose free memory is barely "
-        "larger than the records themselves. Using Table 4, argue for one algorithm over the "
-        "others, and state which column decided it.",
+    st.append(h2("Exercises (not assessed; discussed in Thursday's lab)"))
+    st.append(numbered([
+        "Show from the definition that 7n + 2n log<sub>2</sub> n + 40 is O(n log n), by "
+        "exhibiting a suitable c and n<sub>0</sub>.",
+        "An algorithm performs T(n) = 6n² + 200n operations. For which n does the "
+        "quadratic term exceed the linear term, and what does that tell you about when the "
+        "label O(n²) becomes informative?",
+        "A team replaces an O(n²) routine with an O(n log n) one and the program gets "
+        "slower. Give three explanations consistent with this handout.",
     ]))
 
     return st
@@ -920,14 +887,22 @@ def verify(path: Path) -> int:
         mark = "MISSING" if ph in missing else "found  "
         print(f"  [{mark}] {ph[:72]}{'...' if len(ph) > 72 else ''}")
 
+    ok = True
     if len(raw) < 8000:
         print("FAIL: text layer looks too short to be a real extraction.", file=sys.stderr)
-        return 1
+        ok = False
     if missing:
         print(f"FAIL: {len(missing)} required phrase(s) missing from the text layer.",
               file=sys.stderr)
-        return 1
-    return 0
+        ok = False
+    if not 4 <= pages <= 6:
+        print(f"FAIL: expected a 4-6 page handout, got {pages}.", file=sys.stderr)
+        ok = False
+    stray = sorted({c for c in raw if c in "■�" or ord(c) < 9})
+    if stray:
+        print(f"FAIL: unmapped glyphs in the text layer: {stray!r}", file=sys.stderr)
+        ok = False
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

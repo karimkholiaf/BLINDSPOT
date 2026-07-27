@@ -221,7 +221,7 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-rule py-5 font-mono text-[0.7rem] text-muted">
-        Built for the Prometheus July AI Challenge · Assessment by Claude Opus 5
+        Built for the Prometheus July AI Challenge · Concept extraction and assessment by Gemini
       </footer>
     </div>
   );

@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { anthropic, errorResponse, EFFORT, MODEL } from "@/lib/anthropic";
+import { errorResponse, generateStructured, MODELS } from "@/lib/ai";
 import { AssessmentSchema, ConceptSchema } from "@/lib/schemas";
 import { ASSESSMENT_SYSTEM, assessmentUserPrompt } from "@/lib/prompts";
 
@@ -27,22 +26,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const response = await anthropic().messages.parse({
-      model: MODEL,
-      max_tokens: 8000,
+    const assessment = await generateStructured({
+      model: MODELS.assessment,
       system: ASSESSMENT_SYSTEM,
-      output_config: {
-        effort: EFFORT.assessment,
-        format: zodOutputFormat(AssessmentSchema),
-      },
-      messages: [{ role: "user", content: assessmentUserPrompt(concept, explanation) }],
+      contents: assessmentUserPrompt(concept, explanation),
+      schema: AssessmentSchema,
     });
 
-    if (!response.parsed_output) {
-      return Response.json({ error: "Couldn't assess that. Try rephrasing." }, { status: 422 });
-    }
-
-    return Response.json(response.parsed_output);
+    return Response.json(assessment);
   } catch (error) {
     return errorResponse(error);
   }
