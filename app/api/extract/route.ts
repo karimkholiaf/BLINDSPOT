@@ -1,6 +1,5 @@
-import { createPartFromBase64, type Part } from "@google/genai";
 import { z } from "zod";
-import { errorResponse, generateStructured, MODELS } from "@/lib/ai";
+import { errorResponse, generateStructured } from "@/lib/ai";
 import { MAX_PDF_BYTES } from "@/lib/constants";
 import { ConceptMapSchema } from "@/lib/schemas";
 import { EXTRACTION_SYSTEM, extractionUserPrompt } from "@/lib/prompts";
@@ -35,17 +34,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const parts: Part[] = [];
-    if (pdfBase64) parts.push(createPartFromBase64(pdfBase64, "application/pdf"));
-    if (text?.trim()) {
-      parts.push({ text: `<source_material>\n${text.trim()}\n</source_material>` });
-    }
-    parts.push({ text: extractionUserPrompt(hint) });
-
     const map = await generateStructured({
-      models: MODELS.extraction,
       system: EXTRACTION_SYSTEM,
-      contents: [{ role: "user", parts }],
+      prompt: extractionUserPrompt(hint),
+      pdfBase64,
+      sourceText: text?.trim() ? `<source_material>\n${text.trim()}\n</source_material>` : undefined,
       schema: ConceptMapSchema,
     });
 

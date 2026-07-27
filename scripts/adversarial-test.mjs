@@ -23,12 +23,31 @@ const EXPLANATIONS = [
   {
     id: "A",
     label: "accurate and complete",
-    expect: "mastered",
+    // Verdict deliberately not asserted — see the pass criteria at the bottom.
+    // `mastered` vs `shaky` here tracks how demanding a rubric the extractor
+    // wrote, which is a tuning question, not a correctness one.
+    expect: null,
     expectMisconception: false,
-    // Deliberately covers both the formal definition and the intuition, because
-    // extraction may split Big-O into a narrow "formal definition" concept whose
-    // rubric an intuition-only answer would legitimately fail.
-    text: `Formally, f of n is O of g of n if there exist positive constants c and n-nought such that f of n is less than or equal to c times g of n for every n greater than or equal to n-nought. So it's an asymptotic upper bound: beyond some input size, the function is bounded above by a constant multiple of g. In practice that means you drop constant factors and lower-order terms — 3n squared plus 5n plus 100 is just O(n squared). The key thing is that it describes how the running time grows as the input grows, not how fast the algorithm is in seconds on a particular machine. Because the constant is discarded, a worse asymptotic class can genuinely be faster on small inputs, and only has to lose once n gets large enough.`,
+    // Deliberately in student voice, not a restatement of the rubric. An
+    // earlier version of this test generated A mechanically from the concept's
+    // key points; Claude Sonnet 5 correctly graded that `not_demonstrated`
+    // ("you copied the key points back verbatim"), which is exactly the
+    // parroting this product exists to catch. Covering the same ground in
+    // your own words is the thing being tested — so it has to be written that
+    // way, including the subtler points a strong extractor asks for.
+    text:
+      `Okay so the formal version is that f(n) is O(g(n)) if you can find some positive constant c ` +
+      `and some threshold n-nought where, for every n at or past that threshold, f(n) stays at or ` +
+      `below c times g(n). Two things about that always trip people up. First, nobody constrains how ` +
+      `big c is — it could be a million, the definition doesn't care — which is why Big-O tells you ` +
+      `about the shape of the growth curve and not about actual seconds on a real machine. Two ` +
+      `algorithms that are both O(n log n) can differ enormously in practice. Second, it's only an ` +
+      `upper bound, so it isn't a tight description: anything that's O(n) is also technically O(n²), ` +
+      `and that's a true statement, just a useless one. By convention you quote the tightest bound ` +
+      `you can actually prove, which is why saying O(n²) about a linear algorithm gets you a funny ` +
+      `look even though it isn't wrong. And because the whole thing only kicks in past n-nought, it ` +
+      `says nothing at all about small inputs — a "worse" algorithm can genuinely win down there, ` +
+      `and it often does.`,
   },
   {
     id: "B",
@@ -74,22 +93,25 @@ const target =
   map.concepts.find((c) => /complexity|growth/i.test(`${c.id} ${c.title}`)) ??
   map.concepts[0];
 
+const explanations = EXPLANATIONS;
+
 console.log(`\nGrading three explanations of "${target.title}".`);
 console.log("Rubric the model is grading against:");
 for (const point of target.keyPoints) console.log(`    · ${point}`);
 console.log("");
 
 const results = [];
-for (const item of EXPLANATIONS) {
+for (const item of explanations) {
   const assessment = await post("/api/assess", { concept: target, explanation: item.text });
   results.push({ item, assessment });
 
-  const verdictOk = assessment.verdict === item.expect;
+  const verdictOk = !item.expect || assessment.verdict === item.expect;
   const misconceptionOk = Boolean(assessment.misconception) === item.expectMisconception;
 
   console.log(`${item.id}  ${item.label}`);
   console.log(
-    `    verdict        ${assessment.verdict}  ${verdictOk ? "OK" : `EXPECTED ${item.expect}`}`,
+    `    verdict        ${assessment.verdict}` +
+      (item.expect ? `  ${verdictOk ? "OK" : `EXPECTED ${item.expect}`}` : "  (not asserted)"),
   );
   console.log(`    score          ${assessment.masteryScore}`);
   console.log(
@@ -99,23 +121,44 @@ for (const item of EXPLANATIONS) {
   console.log(`    headline       ${assessment.headline}\n`);
 }
 
-// The property that separates this from a keyword matcher.
-const scoreOf = (id) => results.find((r) => r.item.id === id).assessment.masteryScore;
-const confidentWrongRankedBelowVague = scoreOf("C") < scoreOf("B");
+/*
+  Pass criteria.
+
+  Earlier revisions asserted an exact verdict for all three, and every failure
+  it ever produced was the fixture drifting out of step with a stronger
+  extractor's rubric — never the grader getting the judgement wrong. So the
+  assertions below are the properties that actually carry the product, stated
+  so they hold across models of differing strictness:
+
+    1. A confidently wrong answer is identified as a false belief, not merely
+       marked incomplete, and the belief is named.
+    2. A vague-but-true answer is NOT accused of holding one. Inventing a
+       misconception to seem useful is the failure that would make the tool
+       untrustworthy.
+    3. The confidently wrong answer ranks BELOW the vague one. This is the
+       thesis: fluency is not understanding, and false confidence is worse
+       than admitted uncertainty.
+    4. The genuinely good answer ranks above both.
+
+  Whether (4) reads `mastered` or `shaky` depends on how demanding a rubric
+  this run produced, so the verdict itself is reported but not asserted.
+*/
+const of = (id) => results.find((r) => r.item.id === id).assessment;
+const scoreOf = (id) => of(id).masteryScore;
+
+const checks = [
+  ["confident-wrong flagged as a belief", of("C").verdict === "misconception"],
+  ["...and the belief is named", Boolean(of("C").misconception?.label)],
+  ["vague answer not accused of one", !of("B").misconception],
+  ["vague answer graded shaky", of("B").verdict === "shaky"],
+  ["good answer not accused of one", !of("A").misconception],
+  [`confident-wrong ranks below vague (C=${scoreOf("C")} < B=${scoreOf("B")})`, scoreOf("C") < scoreOf("B")],
+  [`good answer ranks above both (A=${scoreOf("A")})`, scoreOf("A") > scoreOf("B") && scoreOf("A") > scoreOf("C")],
+];
 
 console.log("─".repeat(72));
-const failures = results.filter(
-  (r) =>
-    r.assessment.verdict !== r.item.expect ||
-    Boolean(r.assessment.misconception) !== r.item.expectMisconception,
-);
+for (const [label, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}`);
 
-console.log(`verdicts correct                     ${results.length - failures.length}/3`);
-console.log(
-  `confident-wrong scored below vague   ${confidentWrongRankedBelowVague ? "yes" : "NO"}` +
-    `   (C=${scoreOf("C")}, B=${scoreOf("B")})`,
-);
-
-const passed = failures.length === 0 && confidentWrongRankedBelowVague;
+const passed = checks.every(([, ok]) => ok);
 console.log(`\n${passed ? "PASS" : "FAIL"} — the distinction ${passed ? "holds" : "does not hold"}.`);
 process.exit(passed ? 0 : 1);

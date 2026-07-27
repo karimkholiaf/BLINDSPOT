@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { errorResponse, generateStructured, MODELS } from "@/lib/ai";
+import { errorResponse, generateStructured } from "@/lib/ai";
 import { AssessmentSchema, ConceptSchema } from "@/lib/schemas";
 import { ASSESSMENT_SYSTEM, assessmentUserPrompt } from "@/lib/prompts";
 
@@ -27,9 +27,8 @@ export async function POST(request: Request) {
     }
 
     const assessment = await generateStructured({
-      models: MODELS.assessment,
       system: ASSESSMENT_SYSTEM,
-      contents: assessmentUserPrompt(concept, explanation),
+      prompt: assessmentUserPrompt(concept, explanation),
       schema: AssessmentSchema,
     });
 

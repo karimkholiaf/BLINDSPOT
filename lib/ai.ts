@@ -1,47 +1,52 @@
-import { ApiError, GoogleGenAI, type ContentListUnion } from "@google/genai";
+import { ApiError, GoogleGenAI, createPartFromBase64, type Part } from "@google/genai";
+import OpenAI from "openai";
 import { z } from "zod";
 
 /**
- * Flash rather than Pro, and not for cost reasons: the Gemini free tier returns
- * 429 for every Pro model, so Flash is the strongest tier actually reachable
- * without a billing account. Assessment quality is the whole product, so the
- * choice is validated rather than assumed — `scripts/adversarial-test.mjs`
- * checks the model still ranks a confident wrong answer below a vague correct
- * one, which is the judgement Flash could plausibly get wrong.
+ * Two providers, one chain.
  *
- * The free tier allows only 20 requests per day *per model*, which a handful of
- * visitors would exhaust. That quota is metered separately for each model, so
- * falling through this chain on a 429 multiplies the daily budget by its length
- * instead of leaving the app dead for the rest of the day. Ordered strongest
- * first; every entry is a Flash-tier model of comparable capability, so a
- * fallback degrades throughput rather than answer quality.
+ * Claude Sonnet 5 leads because it is the strongest model available here at a
+ * sane price, and it is reached through OpenRouter rather than Anthropic
+ * directly so that spend is capped by prepaid credit instead of an open-ended
+ * billing account. OpenRouter speaks the OpenAI chat-completions format, hence
+ * the second SDK.
+ *
+ * The Gemini entries are the safety net: when the OpenRouter credit is spent,
+ * requests fall through to the free tier rather than the app going dark. Free
+ * tier allows only 20 requests per day *per model*, metered separately for
+ * each, so listing several multiplies the daily budget.
+ *
+ * Ordering within Gemini is measured, not assumed — `scripts/adversarial-test.mjs`
+ * pinned to each model showed 3.5-flash-lite holds the decisive judgement as
+ * well as 3.6-flash at a fifth of the price. 3.5-flash is last despite being
+ * nominally stronger: it is the one model observed answering 503 "high demand",
+ * which its SDK retries internally and which stalls a request for minutes.
  */
-/*
-  Order is measured, not assumed. Running scripts/adversarial-test.mjs pinned to
-  each model (via BLINDSPOT_MODEL) showed 3.5-flash-lite holds the decisive
-  judgement just as well as 3.6-flash — 3/3 verdicts, confident-wrong still
-  ranked below vague — at a fifth of the input price and about half the latency.
-  3.6-flash stays first only because it words the misconception label more
-  precisely, and that label is the most-read line in the UI.
+export type ModelSpec = { provider: "openrouter" | "gemini"; model: string };
 
-  3.5-flash is last despite being nominally stronger than lite: it is the one
-  model observed answering 503 "high demand", which the SDK retries internally
-  and which stalls a request for minutes.
-*/
-export const MODEL_CHAIN = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-flash-latest",
-  "gemini-3-flash-preview",
-  "gemini-3.5-flash",
-] as const;
+export const MODEL_CHAIN: readonly ModelSpec[] = [
+  { provider: "openrouter", model: "anthropic/claude-sonnet-5" },
+  { provider: "gemini", model: "gemini-3.6-flash" },
+  { provider: "gemini", model: "gemini-3.5-flash-lite" },
+  { provider: "gemini", model: "gemini-flash-latest" },
+  { provider: "gemini", model: "gemini-3-flash-preview" },
+];
 
 /**
- * A model that is merely busy stalls rather than failing: the SDK retries 503
- * internally with backoff and can block for minutes. Capping each attempt turns
- * that into a fast fall-through to the next model.
+ * `BLINDSPOT_MODEL` pins the chain to one model so the adversarial test can
+ * benchmark a single candidate. Prefix with `openrouter:` to reach OpenRouter;
+ * a bare value is treated as a Gemini model.
  */
-const ATTEMPT_TIMEOUT_MS = 45_000;
+function resolveChain(): readonly ModelSpec[] {
+  const override = process.env.BLINDSPOT_MODEL;
+  if (!override) return MODEL_CHAIN;
+  return override.startsWith("openrouter:")
+    ? [{ provider: "openrouter", model: override.slice("openrouter:".length) }]
+    : [{ provider: "gemini", model: override }];
+}
+
+/** A model that is merely busy stalls rather than failing; cap each attempt. */
+const ATTEMPT_TIMEOUT_MS = 90_000;
 
 class AttemptTimeout extends Error {
   constructor(model: string) {
@@ -49,34 +54,9 @@ class AttemptTimeout extends Error {
   }
 }
 
-/**
- * `BLINDSPOT_MODEL` pins the chain to a single model. Only used for
- * benchmarking — it lets scripts/adversarial-test.mjs measure whether a cheaper
- * model still tells a confident wrong answer from a vague correct one, rather
- * than that being decided by assumption.
- */
-const override = process.env.BLINDSPOT_MODEL;
-const chain: readonly string[] = override ? [override] : MODEL_CHAIN;
-
-/** Kept as named entry points so callers read intent, not a model string. */
-export const MODELS = {
-  extraction: chain,
-  assessment: chain,
-} as const;
-
-let client: GoogleGenAI | null = null;
-
-/** Lazy so a missing key is a handled 500 at request time, not a build failure. */
-function ai(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey.startsWith("PASTE_")) throw new MissingKeyError();
-  client ??= new GoogleGenAI({ apiKey });
-  return client;
-}
-
 export class MissingKeyError extends Error {
-  constructor() {
-    super("GEMINI_API_KEY is not set. Copy .env.example to .env.local and add your key.");
+  constructor(which: string) {
+    super(`${which} is not set. Copy .env.example to .env.local and add your keys.`);
     this.name = "MissingKeyError";
   }
 }
@@ -88,83 +68,187 @@ export class UnreadableResponseError extends Error {
   }
 }
 
-/**
- * Gemini accepts JSON Schema via `responseJsonSchema`, and zod v4 emits it
- * directly — but it stamps a `$schema` key the API has no use for, so it goes.
- */
-function toResponseSchema(schema: z.ZodType): Record<string, unknown> {
-  const emitted = z.toJSONSchema(schema) as Record<string, unknown>;
-  delete emitted.$schema;
-  return emitted;
+let gemini: GoogleGenAI | null = null;
+let openrouter: OpenAI | null = null;
+
+function geminiClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new MissingKeyError("GEMINI_API_KEY");
+  gemini ??= new GoogleGenAI({ apiKey });
+  return gemini;
+}
+
+function openrouterClient(): OpenAI {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new MissingKeyError("OPENROUTER_API_KEY");
+  openrouter ??= new OpenAI({
+    apiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+    // OpenRouter attributes usage to the app that sent it.
+    defaultHeaders: { "HTTP-Referer": "https://blindspot-rust.vercel.app", "X-Title": "Blindspot" },
+  });
+  return openrouter;
 }
 
 /**
- * One call path for both routes. The response is constrained by the schema at
- * generation time *and* validated against it after, so a route handler can
- * trust its parsed value completely.
+ * Zod v4 emits JSON Schema directly, but with two things the providers reject:
+ * a `$schema` key neither wants, and numeric/string bounds that OpenAI-style
+ * strict mode refuses outright. The bounds were never load-bearing — the score
+ * is clamped where it is rendered — so they are dropped rather than worked
+ * around.
  */
-export async function generateStructured<T extends z.ZodType>({
-  models,
-  system,
-  contents,
-  schema,
-}: {
-  models: readonly string[];
-  system: string;
-  contents: ContentListUnion;
-  schema: T;
-}): Promise<z.infer<T>> {
-  const config = {
-    systemInstruction: system,
-    responseMimeType: "application/json",
-    responseJsonSchema: toResponseSchema(schema),
-  };
+const UNSUPPORTED_KEYWORDS = [
+  "$schema",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "multipleOf",
+  "minLength",
+  "maxLength",
+  "pattern",
+  "format",
+  "minItems",
+  "maxItems",
+];
 
-  let response;
+function sanitize(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(sanitize);
+  if (node && typeof node === "object") {
+    return Object.fromEntries(
+      Object.entries(node as Record<string, unknown>)
+        .filter(([key]) => !UNSUPPORTED_KEYWORDS.includes(key))
+        .map(([key, value]) => [key, sanitize(value)]),
+    );
+  }
+  return node;
+}
+
+function toResponseSchema(schema: z.ZodType): Record<string, unknown> {
+  return sanitize(z.toJSONSchema(schema)) as Record<string, unknown>;
+}
+
+/** What a caller asks for, independent of which provider ends up serving it. */
+export type StructuredRequest<T extends z.ZodType> = {
+  system: string;
+  prompt: string;
+  /** Base64 PDF, sent as a document rather than extracted to text first. */
+  pdfBase64?: string;
+  /** Extra source material supplied as plain text. */
+  sourceText?: string;
+  schema: T;
+};
+
+async function callGemini(
+  model: string,
+  request: StructuredRequest<z.ZodType>,
+): Promise<string | undefined> {
+  const parts: Part[] = [];
+  if (request.pdfBase64) parts.push(createPartFromBase64(request.pdfBase64, "application/pdf"));
+  if (request.sourceText) parts.push({ text: request.sourceText });
+  parts.push({ text: request.prompt });
+
+  const response = await geminiClient().models.generateContent({
+    model,
+    contents: [{ role: "user", parts }],
+    config: {
+      systemInstruction: request.system,
+      responseMimeType: "application/json",
+      responseJsonSchema: toResponseSchema(request.schema),
+    },
+  });
+  return response.text;
+}
+
+async function callOpenRouter(
+  model: string,
+  request: StructuredRequest<z.ZodType>,
+): Promise<string | undefined> {
+  const content: Array<Record<string, unknown>> = [];
+  if (request.pdfBase64) {
+    content.push({
+      type: "file",
+      file: {
+        filename: "source.pdf",
+        file_data: `data:application/pdf;base64,${request.pdfBase64}`,
+      },
+    });
+  }
+  if (request.sourceText) content.push({ type: "text", text: request.sourceText });
+  content.push({ type: "text", text: request.prompt });
+
+  // `plugins` is an OpenRouter extension the OpenAI SDK doesn't type. Pinning
+  // the PDF engine to `native` matters: left unset, OpenRouter silently falls
+  // back to a paid OCR engine when it can't confirm native support.
+  const params = {
+    model,
+    messages: [
+      { role: "system", content: request.system },
+      { role: "user", content },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "blindspot_result", strict: true, schema: toResponseSchema(request.schema) },
+    },
+    plugins: [{ id: "file-parser", pdf: { engine: "native" } }],
+  } as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming;
+
+  const completion = await openrouterClient().chat.completions.create(params);
+  return completion.choices[0]?.message?.content ?? undefined;
+}
+
+/**
+ * Whether to try the next model instead of failing the request.
+ *
+ * OpenRouter failures are treated as transient almost unconditionally: spent
+ * credit (402), a rejected or revoked key (401/403), rate limits, and outages
+ * should all degrade to the free tier rather than show a judge an error page.
+ * The exception is 400 — a malformed request is a bug in this code, it would
+ * fail identically on any provider, and silently falling through would hide it.
+ *
+ * Gemini is last in the chain, so classifying its errors changes nothing about
+ * routing; the narrower rule just keeps the surfaced message accurate.
+ */
+function isTransient(error: unknown): boolean {
+  if (error instanceof AttemptTimeout) return true;
+  if (error instanceof ApiError) return error.status === 429 || error.status >= 500;
+  if (error instanceof OpenAI.APIError) return error.status !== 400;
+  return false;
+}
+
+export async function generateStructured<T extends z.ZodType>(
+  request: StructuredRequest<T>,
+): Promise<z.infer<T>> {
+  let text: string | undefined;
   let lastTransientError: unknown;
 
-  for (const model of models) {
+  for (const spec of resolveChain()) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      response = await Promise.race([
-        ai().models.generateContent({ model, contents, config }),
+      const call = spec.provider === "gemini" ? callGemini : callOpenRouter;
+      text = await Promise.race([
+        call(spec.model, request),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new AttemptTimeout(model)), ATTEMPT_TIMEOUT_MS);
+          timer = setTimeout(() => reject(new AttemptTimeout(spec.model)), ATTEMPT_TIMEOUT_MS);
         }),
       ]);
-      break;
+      if (text) break;
+      // An empty body is not a transport failure, so it wouldn't throw — but it
+      // is still worth trying the next model rather than failing the request.
+      lastTransientError = new UnreadableResponseError(`${spec.model} returned an empty response.`);
     } catch (error) {
-      // Spent quota (429), an overloaded model (5xx), and a stall are all
-      // reasons another model might succeed. A malformed request or a bad key
-      // fails identically everywhere, so those surface immediately.
-      const isTransient =
-        error instanceof AttemptTimeout ||
-        (error instanceof ApiError && (error.status === 429 || error.status >= 500));
-
-      if (!isTransient) throw error;
-
+      // A malformed request or a bad key fails identically everywhere; only
+      // capacity problems are worth retrying on a different model.
+      if (!isTransient(error)) throw error;
       lastTransientError = error;
-      const reason =
-        error instanceof AttemptTimeout
-          ? "stalled"
-          : (error as ApiError).status === 429
-            ? "out of daily quota"
-            : "overloaded";
-      console.warn(`${model} ${reason}; falling through.`);
+      console.warn(`${spec.model} unavailable (${(error as Error).message}); falling through.`);
     } finally {
       clearTimeout(timer);
     }
   }
 
-  if (!response) {
-    throw lastTransientError ?? new UnreadableResponseError("No model was reachable.");
-  }
-
-  const text = response.text;
   if (!text) {
-    throw new UnreadableResponseError(
-      "The model returned nothing. This usually means the material couldn't be read.",
-    );
+    throw lastTransientError ?? new UnreadableResponseError("No model was reachable.");
   }
 
   let raw: unknown;
@@ -174,7 +258,7 @@ export async function generateStructured<T extends z.ZodType>({
     throw new UnreadableResponseError("The model returned malformed JSON.");
   }
 
-  const parsed = schema.safeParse(raw);
+  const parsed = request.schema.safeParse(raw);
   if (!parsed.success) {
     throw new UnreadableResponseError(
       `The model's response didn't match the expected shape: ${parsed.error.issues[0]?.message ?? "unknown"}`,
@@ -191,25 +275,27 @@ export function errorResponse(error: unknown): Response {
   if (error instanceof UnreadableResponseError) {
     return Response.json({ error: error.message }, { status: 422 });
   }
-  if (error instanceof ApiError) {
-    if (error.status === 429) {
-      return Response.json(
-        {
-          error:
-            "Every model has spent its free-tier daily quota (20 requests each). " +
-            "It resets on Google's clock — try again tomorrow, or add your own key.",
-        },
-        { status: 429 },
-      );
-    }
-    if (error.status === 401 || error.status === 403) {
-      return Response.json({ error: "Google rejected the API key." }, { status: 500 });
-    }
+
+  const status =
+    error instanceof ApiError || error instanceof OpenAI.APIError ? (error.status ?? 0) : 0;
+
+  if (status === 429 || status === 402) {
     return Response.json(
-      { error: `Gemini API error (${error.status}): ${error.message}` },
-      { status: 502 },
+      {
+        error:
+          "Every model is currently unavailable — the Claude credit and the free-tier " +
+          "daily quotas are both spent. The quotas reset on Google's clock.",
+      },
+      { status: 429 },
     );
   }
+  if (status === 401 || status === 403) {
+    return Response.json({ error: "An API key was rejected." }, { status: 500 });
+  }
+  if (status >= 500) {
+    return Response.json({ error: `Upstream model error (${status}).` }, { status: 502 });
+  }
+
   console.error("Unhandled route error:", error);
   return Response.json({ error: "Something went wrong on our end." }, { status: 500 });
 }
