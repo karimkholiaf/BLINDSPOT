@@ -1,65 +1,228 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import { BlindSpotTest } from "@/components/BlindSpotTest";
+import { ConceptRail } from "@/components/ConceptRail";
+import { Diagnosis } from "@/components/Diagnosis";
+import { TeachBack } from "@/components/TeachBack";
+import { Uploader, type Source } from "@/components/Uploader";
+import type { Assessment, ConceptMap } from "@/lib/schemas";
+
+const READING_STATES = [
+  "Reading the material",
+  "Pulling out the concepts",
+  "Writing a rubric for each one",
+];
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error ?? "Request failed.");
+  return data as T;
+}
 
 export default function Home() {
+  const [map, setMap] = useState<ConceptMap | null>(null);
+  const [sourceLabel, setSourceLabel] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, Assessment>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [extracting, setExtracting] = useState(false);
+  const [assessing, setAssessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState(0);
+
+  useEffect(() => {
+    if (!extracting) return;
+    const timer = setInterval(
+      () => setPhase((value) => Math.min(value + 1, READING_STATES.length - 1)),
+      2600,
+    );
+    return () => clearInterval(timer);
+  }, [extracting]);
+
+  async function handleSource(source: Source) {
+    setPhase(0);
+    setExtracting(true);
+    setError(null);
+    setSourceLabel(source.label);
+    try {
+      const result = await postJson<ConceptMap>("/api/extract", {
+        pdfBase64: source.pdfBase64,
+        text: source.text,
+      });
+      setMap(result);
+      setActiveId(result.concepts[0]?.id ?? null);
+      setResults({});
+      setDrafts({});
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't read that material.");
+      setSourceLabel(null);
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function handleAssess() {
+    const concept = map?.concepts.find((item) => item.id === activeId);
+    if (!concept) return;
+
+    setAssessing(true);
+    setError(null);
+    try {
+      const assessment = await postJson<Assessment>("/api/assess", {
+        concept,
+        explanation: drafts[concept.id] ?? "",
+      });
+      setResults((current) => ({ ...current, [concept.id]: assessment }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn't assess that.");
+    } finally {
+      setAssessing(false);
+    }
+  }
+
+  const activeConcept = map?.concepts.find((concept) => concept.id === activeId) ?? null;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="mx-auto flex min-h-full max-w-6xl flex-col px-5 sm:px-8">
+      <header className="flex items-baseline justify-between border-b border-rule py-5">
+        <div className="flex items-baseline gap-3">
+          <span className="font-display text-base font-bold tracking-[0.16em] text-ink">
+            BLINDSPOT
+          </span>
+          <span className="hidden font-mono text-[0.7rem] text-muted sm:inline">
+            you don&apos;t know it until you can teach it
+          </span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        {map && (
+          <button
+            type="button"
+            onClick={() => {
+              setMap(null);
+              setResults({});
+              setDrafts({});
+              setActiveId(null);
+              setSourceLabel(null);
+              setError(null);
+            }}
+            className="font-mono text-xs text-muted underline decoration-rule underline-offset-4 transition-colors hover:text-ink"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            New material
+          </button>
+        )}
+      </header>
+
+      <main className="flex-1 py-10 sm:py-14">
+        {!map ? (
+          <div className="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-16">
+            <div>
+              <h1 className="max-w-xl font-display text-[2rem] leading-[1.15] tracking-tight text-ink sm:text-[2.6rem]">
+                Your brain fills your blind spot with something plausible.
+              </h1>
+              <p className="mt-4 max-w-xl font-body text-[1.35rem] italic leading-snug text-muted">
+                So does your understanding.
+              </p>
+
+              <p className="mt-7 max-w-lg font-body text-[1rem] leading-relaxed text-ink">
+                Re-reading your notes can&apos;t find what you almost know. Explaining can. Upload a
+                lecture, teach each idea back in your own words, and Blindspot names the specific
+                thing you have wrong — not just the questions you missed.
+              </p>
+
+              <div className="mt-9">
+                {extracting ? (
+                  <div className="border border-rule bg-surface p-8">
+                    <p className="eyebrow">{sourceLabel}</p>
+                    <p className="mt-3 font-display text-lg text-ink">
+                      {READING_STATES[phase]}
+                      <span className="animate-rec">…</span>
+                    </p>
+                    <p className="mt-2 font-mono text-[0.7rem] text-muted">
+                      Usually 15–30 seconds.
+                    </p>
+                  </div>
+                ) : (
+                  <Uploader onSource={handleSource} busy={extracting} />
+                )}
+              </div>
+
+              {error && (
+                <p
+                  role="alert"
+                  className="mt-5 max-w-lg border-l-2 border-flag bg-flag/5 py-2.5 pl-3 font-mono text-xs leading-relaxed text-ink"
+                >
+                  {error}
+                </p>
+              )}
+            </div>
+
+            <div className="lg:pt-2">
+              <BlindSpotTest />
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-10 lg:grid-cols-[16rem_1fr] lg:gap-14">
+            <aside className="lg:sticky lg:top-8 lg:self-start">
+              <ConceptRail
+                concepts={map.concepts}
+                results={results}
+                activeId={activeId}
+                onSelect={(id) => setActiveId(id)}
+              />
+            </aside>
+
+            <div className="min-w-0">
+              <p className="eyebrow mb-8">{map.sourceTitle}</p>
+
+              {activeConcept && (
+                <>
+                  <TeachBack
+                    key={activeConcept.id}
+                    concept={activeConcept}
+                    value={drafts[activeConcept.id] ?? ""}
+                    onChange={(value) =>
+                      setDrafts((current) => ({ ...current, [activeConcept.id]: value }))
+                    }
+                    onSubmit={handleAssess}
+                    busy={assessing}
+                  />
+
+                  {error && (
+                    <p
+                      role="alert"
+                      className="mt-5 border-l-2 border-flag bg-flag/5 py-2.5 pl-3 font-mono text-xs leading-relaxed text-ink"
+                    >
+                      {error}
+                    </p>
+                  )}
+
+                  {assessing && (
+                    <p className="mt-8 font-mono text-xs text-muted">
+                      Comparing your explanation against the material
+                      <span className="animate-rec">…</span>
+                    </p>
+                  )}
+
+                  {!assessing && results[activeConcept.id] && (
+                    <div className="mt-8">
+                      <Diagnosis assessment={results[activeConcept.id]} />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </main>
+
+      <footer className="border-t border-rule py-5 font-mono text-[0.7rem] text-muted">
+        Built for the Prometheus July AI Challenge · Assessment by Claude Opus 5
+      </footer>
     </div>
   );
 }
