@@ -144,7 +144,6 @@ scripts/
   adversarial-test.mjs    the incomplete-vs-wrong gate
   make_sample_pdf.py      regenerates and verifies the sample lecture
 docs/
-  video-script.md         demo video shot list
   devpost-submission.md   submission copy
 ```
 
