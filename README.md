@@ -4,7 +4,7 @@
 
 **[Try it →](https://blindspot-rust.vercel.app)** · [2-minute demo](docs/blindspot-demo.mp4)
 
-Upload a lecture PDF. Blindspot pulls out the concepts and writes a grading rubric for each one. You then explain each concept back in your own words — typed or spoken — and it grades your explanation against that rubric.
+Upload a lecture as PDF or Word. Blindspot pulls out the concepts and writes a grading rubric for each one. You then explain each concept back in your own words — typed or spoken — and it grades your explanation against that rubric.
 
 The part that matters: it separates *incomplete* from *wrong*. A vague answer gets prompted for more. A fluent, confident, false answer gets named — the specific belief you hold, the phrase that gave you away, and what is actually true instead.
 
@@ -40,7 +40,7 @@ Explaining a concept out loud, with nothing in front of you, is the one exercise
 
 The pipeline:
 
-1. **Upload.** The browser base64-encodes the PDF and posts it to `/api/extract`. The PDF is handed to the model as a document part — there is no text-extraction or pdf.js layer, so tables, pseudocode blocks and layout reach the model intact. Pasting raw text is supported as an alternative.
+1. **Upload.** The browser base64-encodes the file and posts it to `/api/extract`, which reads it to text first — `unpdf` for PDF, `mammoth` for `.docx`. That began as a latency fix and turned into the reason Word works at all: by the time a model is involved, every format looks the same. A PDF with no usable text layer is the one case that still travels to the model as a document, so scanned handouts degrade rather than fail. Pasting raw text is supported as an alternative.
 2. **Extract.** 6 to 10 concepts, ordered so prerequisites come before what depends on them, each with a definition, its rubric, and its known misconception.
 3. **Teach back.** A textarea, plus optional dictation via the Web Speech API with a live interim transcript. Explaining out loud is closer to the real exercise than writing is.
 4. **Assess.** The concept and the explanation go to `/api/assess`, which returns a verdict, a 0–100 mastery score, what you demonstrated, what you missed, a Socratic follow-up question that must not contain its own answer, and — only when something is genuinely false — a structured misconception object.
@@ -63,7 +63,7 @@ Both routes go through one function, `generateStructured` in `lib/ai.ts`. The Zo
 
 Both calls run through one chain of models in `lib/ai.ts`, tried in order until one answers.
 
-**Primary: `anthropic/claude-sonnet-5`, reached through OpenRouter.** It is the strongest model available here at a sane price. It goes through OpenRouter rather than Anthropic directly so that spend is capped by prepaid credit instead of an open-ended billing account; OpenRouter speaks the OpenAI chat-completions format, which is why `openai` v6 sits alongside `@google/genai`. PDFs are sent natively, with the PDF engine pinned to `native` so OpenRouter never quietly falls back to a paid OCR engine.
+**Primary: `anthropic/claude-sonnet-5`, reached through OpenRouter.** It is the strongest model available here at a sane price. It goes through OpenRouter rather than Anthropic directly so that spend is capped by prepaid credit instead of an open-ended billing account; OpenRouter speaks the OpenAI chat-completions format, which is why `openai` v6 sits alongside `@google/genai`. It leads the chain for `/api/assess`, where the product's judgement lives. Extraction runs a separate chain led by `google/gemini-3.5-flash-lite`, also through OpenRouter: reading material into a fixed shape rewards speed rather than judgement, and that route has a hard ceiling to fit inside. When a PDF with no text layer does reach the model as a document, the PDF engine is pinned to `native` so OpenRouter never quietly falls back to a paid OCR engine.
 
 **Fallback: four Gemini Flash models on the free tier** — `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-flash-latest`, `gemini-3-flash-preview`. They exist so the app degrades instead of going dark once the prepaid credit is spent.
 
@@ -123,7 +123,7 @@ Other scripts: `npm run build`, `npm start`, `npm run lint`. Deploys to Vercel a
 
 ```
 app/
-  api/extract/route.ts    PDF or text in, concept map with rubrics out
+  api/extract/route.ts    PDF, Word or text in, concept map with rubrics out
   api/assess/route.ts     concept + explanation in, verdict + diagnosis out
   page.tsx                the client flow; owns the map, drafts and results
   layout.tsx              fonts and metadata
@@ -153,7 +153,7 @@ Next.js 16.2.12 (App Router), React 19.2, TypeScript, Tailwind v4, `openai` 6 (f
 ## Limitations
 
 - **Dictation is Chrome and Edge only.** It uses the Web Speech API, which Firefox and Safari do not implement. `TeachBack` feature-detects support and hides the button rather than offering something that will not work. Typing works everywhere.
-- **Scanned or image-only PDFs will not work.** There is no OCR step. The document goes to the model as a PDF part and needs a real text layer. If your material is a photocopy, paste the text instead.
+- **Scanned or image-only PDFs are unreliable.** There is no OCR step. A PDF with no text layer falls back to being sent to the model as a document, which often works but is slower and costs more. If your material is a photocopy, pasting the text is the dependable route. Word's older `.doc` format is rejected outright — `.docx` only.
 - **3 MB upload cap.** Vercel caps request bodies at 4.5 MB and base64 inflates by roughly a third, so the practical ceiling is about 3 MB. It is enforced twice — in the browser before the upload, and in the route before a request is spent. A whole textbook needs splitting by chapter.
 - **Quality degrades when the credit runs out.** Extraction and assessment are one model call each, billed against prepaid OpenRouter credit. When that credit is spent — or the key is rejected, or the request is rate-limited or stalls past 90 seconds — the request falls through to the Gemini free tier rather than failing, which keeps the app up but means the answer may come from a weaker model than the one the results above were measured on. The free tier has its own daily per-model quota; once every model in the chain is exhausted, the UI says so in a sentence rather than showing a stack trace.
 - **Nothing is saved.** The concept map, your explanations and your results live in React state for the length of the session. A refresh clears them. There is no account, no database, and no history.

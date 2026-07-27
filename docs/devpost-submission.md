@@ -30,7 +30,7 @@ Quizzes only partly fix this, because they test the questions someone thought to
 
 ### What it does
 
-You upload a lecture PDF. Blindspot returns 6 to 10 concepts, ordered so prerequisites come first, and each concept carries its own grading rubric — 3 to 5 individually checkable claims a correct explanation has to contain — plus the way that specific topic is most commonly misunderstood.
+You upload a lecture as PDF or Word. Blindspot returns 6 to 10 concepts, ordered so that anything needed to understand a later concept comes first, and each concept carries its own grading rubric — 3 to 5 individually checkable claims a correct explanation has to contain — plus the way that specific topic is most commonly misunderstood.
 
 You then teach each concept back in your own words, typed or dictated out loud through the Web Speech API with a live transcript. Blindspot grades what you said against that concept's rubric and returns one of four verdicts: Solid, Thin in places, Blind spot, or Not enough to go on. Alongside it you get a 0–100 mastery score, what you actually demonstrated, what you missed, and one Socratic follow-up question that is answerable from the material and does not contain its own answer.
 
@@ -48,7 +48,9 @@ The AI layer is a two-provider chain in `lib/ai.ts`. Claude Sonnet 5 leads, reac
 
 Structured output is belt and braces, and identical on both providers: we define the response shape once as a Zod v4 schema, convert it with `z.toJSONSchema()`, and hand it over as a strict `json_schema` response format on OpenRouter or as `responseJsonSchema` on Gemini, so generation is constrained — then re-validate the returned JSON against the same Zod schema at runtime, so a route handler can trust its parsed value completely. An off-shape response becomes a 422 with a sentence a user can read, not a crash.
 
-The PDF goes to the model directly as a base64 document part on both providers, with OpenRouter's PDF engine pinned to `native` so it can't quietly fall back to a paid OCR engine. There's no text-extraction or pdf.js step, which means the tables, pseudocode blocks and layout in a real lecture handout reach the model intact instead of being flattened into a wall of text first. The trade-off is a 3 MB cap, since Vercel's request body limit is 4.5 MB and base64 inflates by about a third.
+Extraction runs in two phases, and the reason is a measurement. Asking one call for 6-10 fully-rubricked concepts is 3-4k output tokens, which timed at 45-90 seconds no matter which model served it — against a 60-second platform ceiling. So the first call returns just the outline, and the rubric for each concept is then written in its own small call, all of them concurrently. Same result, no individual request anywhere near the limit: **58.6 seconds became about 6**, and the cost of an extraction fell from $0.057 to $0.015.
+
+Files are read to text before a model sees them — `unpdf` for PDF, `mammoth` for `.docx`. That started as part of the same latency work and is why Word documents are supported at all: by the time the model is involved, every format looks identical. A PDF with no usable text layer still travels as a native document part, with OpenRouter's PDF engine pinned so it can't quietly fall back to a paid OCR engine. The trade-off is a 3 MB cap, since Vercel's request body limit is 4.5 MB and base64 inflates by about a third.
 
 We built this with AI-assisted development, using Claude Code. This is an AI hackathon and the organisers' own resources page recommends coding assistants, so we'd rather state it plainly than leave it implied: the prompts, the schema design, the adversarial test and the product decisions are ours; a lot of the typing is not. The prompt engineering in `lib/prompts.ts` is where most of the actual work went, and it's worth reading — the assessment system prompt carries three worked examples on one concept, because worked examples outweigh abstract rules, and it explicitly forbids manufacturing a misconception to seem useful.
 
@@ -100,7 +102,7 @@ And test the model tier instead of assuming it. "Flash is probably fine" is a cl
 
 Persistence, first — right now a refresh loses your map, your explanations and your results, which is fine for a demo and wrong for a study tool. After that: spaced repetition that resurfaces flagged concepts on a schedule, weighted so a Blind spot comes back sooner than a Thin in places.
 
-Then multi-document maps, so a whole module's handouts build one concept graph and prerequisite links work across lectures rather than within a single PDF. The `prerequisites` field is already in the schema and currently under-used — the rail could show which concepts are wobbly *because* something underneath them is wrong.
+Then multi-document maps, so a whole module's handouts build one concept graph and prerequisite links work across lectures rather than within a single file. Ordering already encodes dependency loosely; making it explicit would let the rail show which concepts are wobbly *because* something underneath them is wrong.
 
 Beyond that: OCR so scanned handouts work, a spoken follow-up loop where you answer the Socratic question out loud and get re-graded on the same concept, and an export of your flagged misconceptions as a revision sheet — the highest-value page of notes anyone could take into an exam, because it's the list of things you were about to get wrong.
 

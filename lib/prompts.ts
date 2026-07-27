@@ -1,22 +1,39 @@
-import type { Concept } from "./schemas";
+import type { Concept, ConceptOutline } from "./schemas";
 
 export const EXTRACTION_SYSTEM = `You build concept maps from course material for a tool that tests whether students genuinely understand what they've studied.
 
 Extract the 6-10 ideas a student would actually be examined on. Skip administrative content — course codes, reading lists, office hours, slide numbers.
 
-Two fields deserve more care than the rest:
+Each concept needs a short id, a title of 2-5 words, and a definition of one or two sentences that stays faithful to the source material.
+
+Order concepts so that anything required to understand a later concept comes before it.`;
+
+export const extractionUserPrompt = (hint?: string) =>
+  [
+    "List the concepts in this material.",
+    hint?.trim() ? `\nThe student adds this context: ${hint.trim()}` : "",
+  ].join("");
+
+/**
+ * Phase two, run once per concept. It is deliberately given the whole source
+ * material rather than an excerpt: the rubric has to be faithful to what was
+ * actually taught, and a concept's supporting detail is rarely all in one place.
+ */
+export const RUBRIC_SYSTEM = `You write the grading rubric for one concept from a set of course material, for a tool that tests whether students genuinely understand what they've studied.
 
 **keyPoints** is a grading rubric, not a summary. Each entry is one checkable claim that a genuinely correct explanation has to contain. Write them so that a grader reading a student's explanation can mark each one present or absent without judgement calls. "Explains why the base case is required to terminate" is checkable. "Understands recursion well" is not.
 
 **commonMisconception** should come from what you know about how this topic is actually misunderstood by learners, not from the source text. Source material rarely states its own traps. If a topic has a famous failure mode, name that one.
 
-Order concepts so that prerequisites come before the concepts that depend on them, and make \`prerequisites\` reference only ids that exist in this map.`;
+Write about the one concept you are given, not the material as a whole.`;
 
-export const extractionUserPrompt = (hint?: string) =>
-  [
-    "Build the concept map for this material.",
-    hint?.trim() ? `\nThe student adds this context: ${hint.trim()}` : "",
-  ].join("");
+export const rubricUserPrompt = (concept: ConceptOutline) =>
+  `Write the rubric for this concept.
+
+<concept>
+<title>${concept.title}</title>
+<definition>${concept.definition}</definition>
+</concept>`;
 
 /**
  * The assessment prompt. This is the product.

@@ -1,9 +1,14 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { MAX_PDF_BYTES, SAMPLE_PDF_PATH } from "@/lib/constants";
+import {
+  ACCEPTED_EXTENSIONS,
+  ACCEPTED_UPLOAD,
+  MAX_UPLOAD_BYTES,
+  SAMPLE_PDF_PATH,
+} from "@/lib/constants";
 
-export type Source = { pdfBase64?: string; text?: string; label: string };
+export type Source = { fileBase64?: string; text?: string; label: string };
 
 function toBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -33,17 +38,25 @@ export function Uploader({
   async function acceptFile(file: File | undefined) {
     setError(null);
     if (!file) return;
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setError("That's not a PDF. Upload a PDF, or paste the text instead.");
-      return;
-    }
-    if (file.size > MAX_PDF_BYTES) {
+
+    const name = file.name.toLowerCase();
+    if (!ACCEPTED_EXTENSIONS.some((extension) => name.endsWith(extension))) {
+      // .doc gets its own message because "save it as .docx" is actionable and
+      // "that's not a supported file" is not.
       setError(
-        `That PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 3 MB. Try a single chapter.`,
+        name.endsWith(".doc")
+          ? "Word's older .doc format can't be read. Save it as .docx and try again."
+          : "That needs to be a PDF or a Word (.docx) file. You can also paste the text instead.",
       );
       return;
     }
-    onSource({ pdfBase64: await toBase64(file), label: file.name });
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 3 MB. Try a single chapter.`,
+      );
+      return;
+    }
+    onSource({ fileBase64: await toBase64(file), label: file.name });
   }
 
   async function loadSample() {
@@ -52,7 +65,7 @@ export function Uploader({
       const response = await fetch(SAMPLE_PDF_PATH);
       if (!response.ok) throw new Error();
       onSource({
-        pdfBase64: await toBase64(await response.blob()),
+        fileBase64: await toBase64(await response.blob()),
         label: "Lecture 4: Algorithmic Complexity",
       });
     } catch {
@@ -78,7 +91,7 @@ export function Uploader({
         }`}
       >
         <p className="font-body text-[0.95rem] text-ink">
-          Drop a lecture PDF here, or{" "}
+          Drop a lecture here, or{" "}
           <button
             type="button"
             disabled={busy}
@@ -89,11 +102,11 @@ export function Uploader({
           </button>
           .
         </p>
-        <p className="mt-2 font-mono text-[0.7rem] text-muted">PDF, up to 3 MB</p>
+        <p className="mt-2 font-mono text-[0.7rem] text-muted">PDF or Word, up to 3 MB</p>
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,.pdf"
+          accept={ACCEPTED_UPLOAD}
           className="sr-only"
           onChange={(event) => void acceptFile(event.target.files?.[0])}
         />

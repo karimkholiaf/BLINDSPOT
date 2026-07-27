@@ -7,7 +7,16 @@ import { z } from "zod";
  * /api/assess checks an explanation against. Extraction produces the rubric,
  * assessment consumes it — which is why both live in one schema file.
  */
-export const ConceptSchema = z.object({
+/**
+ * The outline half of a concept — what a first pass over the material yields.
+ *
+ * Extraction runs in two phases because one call producing 6-10 fully-rubricked
+ * concepts is 3-4k output tokens, which measured at 45-90s regardless of which
+ * model served it and did not fit the route's 60s ceiling. The outline is small
+ * and fast; the rubrics are then written per concept, in parallel, each one a
+ * tiny call. Same result, none of the individual requests near the limit.
+ */
+export const ConceptOutlineSchema = z.object({
   id: z
     .string()
     .describe("Short lowercase slug, e.g. 'big-o-notation'. Unique within the map."),
@@ -15,15 +24,23 @@ export const ConceptSchema = z.object({
   definition: z
     .string()
     .describe("One or two sentences defining the concept, faithful to the source material."),
+});
+
+export const OutlineSchema = z.object({
+  sourceTitle: z.string().describe("Title of the source material."),
+  concepts: z
+    .array(ConceptOutlineSchema)
+    .describe("6-10 concepts, ordered so prerequisites come before the concepts that need them."),
+});
+
+/** The graded half, written per concept in phase two. */
+export const RubricSchema = z.object({
   keyPoints: z
     .array(z.string())
     .describe(
       "3-5 specific claims a genuinely correct explanation must contain. These are graded " +
         "individually, so make each one a single checkable idea rather than a paragraph.",
     ),
-  prerequisites: z
-    .array(z.string())
-    .describe("ids of concepts in this same map that should be understood first. Empty if none."),
   commonMisconception: z
     .string()
     .describe(
@@ -32,13 +49,15 @@ export const ConceptSchema = z.object({
     ),
 });
 
+export const ConceptSchema = ConceptOutlineSchema.extend(RubricSchema.shape);
+
 export const ConceptMapSchema = z.object({
   sourceTitle: z.string().describe("Title of the source material."),
-  concepts: z
-    .array(ConceptSchema)
-    .describe("6-10 concepts, ordered so prerequisites come before the concepts that need them."),
+  concepts: z.array(ConceptSchema),
 });
 
+export type ConceptOutline = z.infer<typeof ConceptOutlineSchema>;
+export type Rubric = z.infer<typeof RubricSchema>;
 export type Concept = z.infer<typeof ConceptSchema>;
 export type ConceptMap = z.infer<typeof ConceptMapSchema>;
 

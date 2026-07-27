@@ -68,7 +68,7 @@ export default function Home() {
     setSourceLabel(source.label);
     try {
       const result = await postJson<ConceptMap>("/api/extract", {
-        pdfBase64: source.pdfBase64,
+        fileBase64: source.fileBase64,
         text: source.text,
       });
       setMap(result);
@@ -266,11 +266,6 @@ export default function Home() {
           </div>
         )}
       </main>
-
-      <footer className="border-t border-rule py-5 font-mono text-[0.7rem] text-muted">
-        Built for the Prometheus July AI Challenge · Concept extraction and assessment by Claude
-        Sonnet 5, falling back to Gemini Flash
-      </footer>
     </div>
   );
 }

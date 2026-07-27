@@ -26,6 +26,10 @@ import { z } from "zod";
  */
 export type ModelSpec = { provider: "openrouter" | "gemini"; model: string };
 
+/**
+ * Assessment is where the product's judgement lives — separating an incomplete
+ * answer from a confidently wrong one — so it gets the strongest model.
+ */
 export const MODEL_CHAIN: readonly ModelSpec[] = [
   { provider: "openrouter", model: "anthropic/claude-sonnet-5" },
   { provider: "gemini", model: "gemini-3.6-flash" },
@@ -35,13 +39,33 @@ export const MODEL_CHAIN: readonly ModelSpec[] = [
 ];
 
 /**
+ * Extraction is a different job: read the material and write it down in a fixed
+ * shape. It rewards speed rather than judgement, and it is the route that has
+ * to fit inside a 60s ceiling, so it leads with a fast model.
+ *
+ * The Gemini entries here go through OpenRouter rather than the Google SDK on
+ * purpose. The direct free tier caps at 20 requests per day per model, which
+ * this route can now burn through in a handful of sessions because it makes
+ * several calls per extraction; routed through OpenRouter the same models are
+ * paid from prepaid credit and have no daily cap. The direct free tier stays on
+ * the end of the chain as a last resort.
+ */
+export const EXTRACTION_CHAIN: readonly ModelSpec[] = [
+  { provider: "openrouter", model: "google/gemini-3.5-flash-lite" },
+  { provider: "openrouter", model: "anthropic/claude-haiku-4.5" },
+  { provider: "openrouter", model: "anthropic/claude-sonnet-5" },
+  { provider: "gemini", model: "gemini-3.5-flash-lite" },
+  { provider: "gemini", model: "gemini-flash-latest" },
+];
+
+/**
  * `BLINDSPOT_MODEL` pins the chain to one model so the adversarial test can
  * benchmark a single candidate. Prefix with `openrouter:` to reach OpenRouter;
  * a bare value is treated as a Gemini model.
  */
-function resolveChain(): readonly ModelSpec[] {
+function resolveChain(chain: readonly ModelSpec[]): readonly ModelSpec[] {
   const override = process.env.BLINDSPOT_MODEL;
-  if (!override) return MODEL_CHAIN;
+  if (!override) return chain;
   return override.startsWith("openrouter:")
     ? [{ provider: "openrouter", model: override.slice("openrouter:".length) }]
     : [{ provider: "gemini", model: override }];
@@ -148,6 +172,8 @@ export type StructuredRequest<T extends z.ZodType> = {
   /** Extra source material supplied as plain text. */
   sourceText?: string;
   schema: T;
+  /** Defaults to the assessment chain; extraction passes its own. */
+  chain?: readonly ModelSpec[];
 };
 
 async function callGemini(
@@ -238,7 +264,7 @@ export async function generateStructured<T extends z.ZodType>(
   let text: string | undefined;
   let lastTransientError: unknown;
 
-  for (const spec of resolveChain()) {
+  for (const spec of resolveChain(request.chain ?? MODEL_CHAIN)) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const call = spec.provider === "gemini" ? callGemini : callOpenRouter;
