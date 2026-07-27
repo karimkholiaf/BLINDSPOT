@@ -34,7 +34,7 @@ You upload a lecture as PDF or Word. Blindspot returns 6 to 10 concepts, ordered
 
 You then teach each concept back in your own words, typed or dictated out loud through the Web Speech API with a live transcript. Blindspot grades what you said against that concept's rubric and returns one of four verdicts: Solid, Thin in places, Blind spot, or Not enough to go on. Alongside it you get a 0–100 mastery score, what you actually demonstrated, what you missed, and one Socratic follow-up question that is answerable from the material and does not contain its own answer.
 
-The verdict that matters is Blind spot. Most graders can only tell you a score. When your explanation contains something actively false, Blindspot names the belief ("Big-O measures actual speed, not growth rate"), quotes the exact phrase in your own words that revealed it, explains why it's wrong, and states what's actually true — with a counterexample where a short one exists. Being vague does not trigger it. Being wrong does. Those two need opposite responses: one needs prompting, the other needs correcting.
+The verdict that matters is Blind spot. Most graders can only tell you a score. When your explanation contains something actively false, Blindspot names the belief ("Big-O measures speed, not growth rate"), quotes the exact phrase in your own words that revealed it, explains why it's wrong, and states what's actually true — with a counterexample where a short one exists. Being vague does not trigger it. Being wrong does. Those two need opposite responses: one needs prompting, the other needs correcting.
 
 A rail down the side of the app marks every concept with its verdict as you go, so a study session ends with a specific list of what to revisit rather than a general feeling about how it went.
 
@@ -66,7 +66,7 @@ Where we landed is a two-provider chain, and it solves the original problem rath
 
 **Trusting the grader.** The nuanced judgement at the centre of this product — telling a confidently wrong explanation apart from a vague one — is exactly the kind of thing a model can plausibly get wrong, and assuming otherwise would have been the easy move. So we wrote `scripts/adversarial-test.mjs` to find out instead. It extracts the concept map from the sample lecture, locates the Big-O concept, and grades three explanations against that concept's generated rubric: one accurate, one vague but containing nothing false, and one that is fluent, confident and wrong. The third is deliberately the longest, uses the most correct terminology and reads as the most authoritative, so any grader that rewards fluency ranks it highest.
 
-It scored the lowest. Against Claude Sonnet 5 all seven checks pass: the confidently wrong answer scored **8** against the vague answer's **28** and the accurate one's **88**, and the misconception was named rather than merely flagged — "Big-O measures actual speed, not growth rate". The vague answer was not accused of holding a false belief, which was its own tuning problem: a model told to look for misconceptions will happily find one in an answer that's just thin, and a student who's told they hold a false belief when they were only incomplete will stop trusting the tool, correctly.
+It scored the lowest. Against Claude Sonnet 5 all seven checks pass: the confidently wrong answer scored **12** against the vague answer's **30** and the accurate one's **95**, and the misconception was named rather than merely flagged — "Big-O measures speed, not growth rate". The vague answer was not accused of holding a false belief, which was its own tuning problem: a model told to look for misconceptions will happily find one in an answer that's just thin, and a student who's told they hold a false belief when they were only incomplete will stop trusting the tool, correctly.
 
 **Writing a test that fails for the right reason.** The gate originally asserted an exact verdict for all three explanations, and it did fail — but every single failure was our hand-written fixture drifting out of step with a stronger model's rubric, never the grader misjudging. One revision made that unmistakable: we had generated the "good" explanation mechanically from the concept's own key points, and Claude Sonnet 5 graded it `not_demonstrated` — "you copied the key points back verbatim" — which is precisely the parroting this product exists to catch. The grader was right and our fixture was wrong.
 
@@ -76,9 +76,9 @@ So we rewrote the pass criteria to assert the properties that actually carry the
 
 ### Accomplishments that we're proud of
 
-The score inversion, measured rather than asserted: 88 for the correct explanation, 28 for the vague one, 8 for the confident wrong one — with the wrong one being the longest and most fluent of the three. That single ordering is the product's whole thesis, and we can demonstrate it on demand instead of claiming it.
+The score inversion, measured rather than asserted: 95 for the correct explanation, 30 for the vague one, 12 for the confident wrong one — with the wrong one being the longest and most fluent of the three. That single ordering is the product's whole thesis, and we can demonstrate it on demand instead of claiming it.
 
-The diagnosis card. Naming the belief, quoting the phrase that revealed it, and giving a concrete counterexample is a categorically different experience from being told you scored 8/100, and it's the difference between marking and teaching.
+The diagnosis card. Naming the belief, quoting the phrase that revealed it, and giving a concrete counterexample is a categorically different experience from being told you scored 12/100, and it's the difference between marking and teaching.
 
 Shipping an honest gate at all. It would have been faster to write a demo, assert the model was good enough, and hope no judge tested the edge case. The test exists precisely because we couldn't afford the model tier we wanted.
 
